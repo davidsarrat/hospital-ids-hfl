@@ -1,4 +1,4 @@
-.PHONY: install data partition compose flower-config up down train eval baselines flat local centralized clean
+.PHONY: install data partition compose flower-config up down train eval render-runtime-notebook baselines flat local centralized clean
 
 SEED ?= 123
 GLOBAL_ROUNDS ?= 3
@@ -36,6 +36,9 @@ train:
 eval:
 	python scripts/evaluate_global_model.py \
 		--checkpoint shared/checkpoints/global/round_$(GLOBAL_ROUNDS).pt
+
+render-runtime-notebook:
+	python scripts/render_runtime_notebook.py
 
 centralized:
 	python scripts/centralized_mlp_baseline.py --epochs $(EPOCHS) --batch-size $(BATCH_SIZE)

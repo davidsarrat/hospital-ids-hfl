@@ -86,6 +86,12 @@ Evaluate the final global checkpoint:
 make eval GLOBAL_ROUNDS=3
 ```
 
+Render the component-level walkthrough notebook after a local run:
+
+```bash
+make render-runtime-notebook
+```
+
 Expected outputs:
 
 ```text
@@ -148,3 +154,7 @@ flat      -> 127.0.0.1:49093
 ```
 
 The orchestrator calls `flwr run . <profile> --stream --run-config ...` for every regional and global step.
+
+## Rendered Walkthroughs
+
+`notebooks/04_flower_runtime_orchestration.ipynb` is committed with rendered outputs. It shows the running SuperLinks, SuperNodes, SuperExec services, gateway nodes, Flower profiles, exact `flwr run` commands, checkpoint metadata, evaluation summary, and the `shared/` raw-data boundary check.
