@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hospital-ids-hfl"
+version = "0.1.0"
+description = "Three-layer hierarchical federated learning demo with Flower and CIC-IDS2017"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Demo maintainers" }
+]
+dependencies = [
+  "flwr[simulation]==1.29.0",
+  "torch>=2.3,<3.0",
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "scikit-learn>=1.5",
+  "pyarrow>=16.0",
+  "kaggle>=1.6",
+  "typer>=0.12",
+  "rich>=13.0",
+  "pydantic>=2.0",
+  "matplotlib>=3.8",
+  "jupyter>=1.0"
+]
+
+[project.scripts]
+hfl-download = "scripts.download_kaggle:app"
+hfl-prepare = "scripts.prepare_cicids:app"
+hfl-partition = "scripts.make_partitions:app"
+hfl-train = "scripts.run_hierarchical_rounds:app"
+hfl-evaluate = "scripts.evaluate_global_model:app"
+hfl-generate-compose = "scripts.generate_compose:app"
+hfl-configure-flower = "scripts.configure_flower_profiles:app"
+hfl-centralized-mlp = "scripts.centralized_mlp_baseline:app"
+hfl-local-only = "scripts.local_only_baseline:app"
+hfl-flat-fl = "scripts.flat_fl_baseline:app"
+
+[tool.setuptools]
+packages = ["hfl_cicids", "scripts"]
+py-modules = []
+
+[tool.flwr.app]
+publisher = "demo"
+name = "hospital-ids-hfl"
+
+[tool.flwr.app.components]
+serverapp = "hfl_cicids.server_app:app"
+clientapp = "hfl_cicids.client_app:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 3
+local-epochs = 1
+batch-size = 1024
+learning-rate = 0.001
+fraction-train = 1.0
+fraction-evaluate = 1.0
+min-train-nodes = 2
+min-evaluate-nodes = 2
+min-available-nodes = 2
+level = "regional"
+region = "region_eu"
+global-round = 1
+init-checkpoint = ""
+output-checkpoint = "shared/checkpoints/debug.pt"
+input-dim = 0
+region-num-examples = 1
+global-num-examples = 1
+eval-split = "val"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
