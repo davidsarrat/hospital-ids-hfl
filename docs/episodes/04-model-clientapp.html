@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>04 - Model and hospital ClientApp - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="active" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>04 - Model and hospital ClientApp</h1><p>How local parquet is loaded, the MLP is trained, and an update is returned to Flower.</p></section><h2>Dataset and MLP</h2><p>The main model is intentionally simple so FedAvg remains transparent: a tabular MLP with one logit output and BCEWithLogitsLoss.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L12-L63">hfl_cicids/task.py:12-63</a></figcaption><pre><code>  12  class IDSFlowDataset(Dataset):
+  13      &quot;&quot;&quot;Parquet-backed CIC-IDS2017 binary classification dataset.&quot;&quot;&quot;
+  14  
+  15      def __init__(self, path: str | Path) -&gt; None:
+  16          path = Path(path)
+  17          if not path.exists():
+  18              raise FileNotFoundError(f&quot;Dataset split not found: {path}&quot;)
+  19  
+  20          df = pd.read_parquet(path)
+  21          if &quot;label&quot; not in df.columns:
+  22              raise ValueError(f&quot;&#x27;label&#x27; column missing in {path}&quot;)
+  23  
+  24          self.y = df[&quot;label&quot;].astype(&quot;float32&quot;).to_numpy(copy=True)
+  25          self.x = df.drop(columns=[&quot;label&quot;]).astype(&quot;float32&quot;).to_numpy(copy=True)
+  26  
+  27          if len(self.x) == 0:
+  28              raise ValueError(f&quot;Dataset split is empty: {path}&quot;)
+  29          if not np.isfinite(self.x).all():
+  30              raise ValueError(f&quot;Non-finite feature values found in {path}&quot;)
+  31  
+  32      def __len__(self) -&gt; int:
+  33          return len(self.y)
+  34  
+  35      def __getitem__(self, idx: int) -&gt; tuple[torch.Tensor, torch.Tensor]:
+  36          return (
+  37              torch.from_numpy(self.x[idx]),
+  38              torch.tensor(self.y[idx], dtype=torch.float32),
+  39          )
+  40  
+  41  
+  42  class TabularIDSNet(nn.Module):
+  43      &quot;&quot;&quot;Compact MLP for binary intrusion detection.&quot;&quot;&quot;
+  44  
+  45      def __init__(self, input_dim: int) -&gt; None:
+  46          super().__init__()
+  47          if input_dim &lt;= 0:
+  48              raise ValueError(f&quot;input_dim must be positive, got {input_dim}&quot;)
+  49  
+  50          self.net = nn.Sequential(
+  51              nn.Linear(input_dim, 128),
+  52              nn.LayerNorm(128),
+  53              nn.ReLU(),
+  54              nn.Dropout(0.10),
+  55              nn.Linear(128, 64),
+  56              nn.LayerNorm(64),
+  57              nn.ReLU(),
+  58              nn.Dropout(0.10),
+  59              nn.Linear(64, 1),
+  60          )
+  61  
+  62      def forward(self, x: torch.Tensor) -&gt; torch.Tensor:
+  63          return self.net(x).squeeze(1)</code></pre></figure><h2>Local training</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L88-L131">hfl_cicids/task.py:88-131</a></figcaption><pre><code>  88  def compute_pos_weight(train_loader: DataLoader) -&gt; torch.Tensor:
+  89      labels = []
+  90      for _, y in train_loader:
+  91          labels.append(y)
+  92      y_all = torch.cat(labels)
+  93      positives = torch.sum(y_all == 1).item()
+  94      negatives = torch.sum(y_all == 0).item()
+  95      if positives == 0:
+  96          return torch.tensor(1.0)
+  97      return torch.tensor(max(1.0, negatives / positives))
+  98  
+  99  
+ 100  def train_one_client(
+ 101      model: nn.Module,
+ 102      train_loader: DataLoader,
+ 103      epochs: int,
+ 104      lr: float,
+ 105      device: torch.device,
+ 106  ) -&gt; float:
+ 107      model.to(device)
+ 108      model.train()
+ 109  
+ 110      pos_weight = compute_pos_weight(train_loader).to(device)
+ 111      criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+ 112      optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+ 113  
+ 114      total_loss = 0.0
+ 115      total_batches = 0
+ 116  
+ 117      for _ in range(epochs):
+ 118          for x, y in train_loader:
+ 119              x = x.to(device)
+ 120              y = y.to(device)
+ 121  
+ 122              optimizer.zero_grad()
+ 123              logits = model(x)
+ 124              loss = criterion(logits, y)
+ 125              loss.backward()
+ 126              optimizer.step()
+ 127  
+ 128              total_loss += float(loss.item())
+ 129              total_batches += 1
+ 130  
+ 131      return total_loss / max(1, total_batches)</code></pre></figure><h2>Hospital ClientApp</h2><p>When the node role is hospital, Flower sends initial arrays. The ClientApp loads those weights, trains on <code>/data/train.parquet</code>, evaluates on validation, and returns arrays plus metrics. The <code>num-examples</code> key enables weighted FedAvg.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L32-L84">hfl_cicids/client_app.py:32-84</a></figcaption><pre><code>  32  @app.train()
+  33  def train(msg: Message, context: Context) -&gt; Message:
+  34      &quot;&quot;&quot;Train a hospital model or return a regional checkpoint as gateway update.&quot;&quot;&quot;
+  35  
+  36      role = str(context.node_config.get(&quot;role&quot;, &quot;hospital&quot;))
+  37  
+  38      if role == &quot;region-gateway&quot;:
+  39          return _train_region_gateway(msg, context)
+  40  
+  41      return _train_hospital(msg, context)
+  42  
+  43  
+  44  def _train_hospital(msg: Message, context: Context) -&gt; Message:
+  45      data_dir = Path(str(context.node_config[&quot;data-dir&quot;]))
+  46      batch_size = int(context.run_config[&quot;batch-size&quot;])
+  47      local_epochs = int(context.run_config[&quot;local-epochs&quot;])
+  48      config = _msg_config(msg)
+  49      lr = float(config.get(&quot;lr&quot;, context.run_config[&quot;learning-rate&quot;]))
+  50  
+  51      input_dim = infer_input_dim(data_dir)
+  52      model = TabularIDSNet(input_dim=input_dim)
+  53      model.load_state_dict(msg.content[&quot;arrays&quot;].to_torch_state_dict())
+  54  
+  55      train_loader, val_loader, _ = load_dataloaders(data_dir, batch_size)
+  56      loss = train_one_client(
+  57          model=model,
+  58          train_loader=train_loader,
+  59          epochs=local_epochs,
+  60          lr=lr,
+  61          device=_device(),
+  62      )
+  63  
+  64      val_metrics = evaluate_binary_classifier(model, val_loader, _device())
+  65  
+  66      metrics = {
+  67          &quot;train_loss&quot;: float(loss),
+  68          &quot;num-examples&quot;: int(len(train_loader.dataset)),
+  69          &quot;val_f1&quot;: float(val_metrics[&quot;eval_f1&quot;]),
+  70          &quot;val_roc_auc&quot;: float(val_metrics[&quot;eval_roc_auc&quot;]),
+  71          &quot;val_auprc&quot;: float(val_metrics[&quot;eval_auprc&quot;]),
+  72          &quot;val_false_positive_rate&quot;: float(val_metrics[&quot;eval_false_positive_rate&quot;]),
+  73          &quot;val_false_negative_rate&quot;: float(val_metrics[&quot;eval_false_negative_rate&quot;]),
+  74      }
+  75  
+  76      return Message(
+  77          content=RecordDict(
+  78              {
+  79                  &quot;arrays&quot;: ArrayRecord(model.state_dict()),
+  80                  &quot;metrics&quot;: MetricRecord(metrics),
+  81              }
+  82          ),
+  83          reply_to=msg,
+  84      )</code></pre></figure><div class="pager"><a href="03-flower-runtime.html">Previous: 03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a><span></span><a href="05-serverapp-fedavg.html">Next: 05 - Regional ServerApp and FedAvg</a></div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>00 - Mental model and topology - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="" href="../index.html">Home</a>
+<a class="active" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>00 - Mental model and topology</h1><p>The complete architecture before touching commands: hospitals, regions, gateways, and the global hub.</p></section><h2>Demo objective</h2><p>This project simulates hospitals collaborating to train an intrusion detector on CIC-IDS2017 network-flow data. Each hospital keeps its local partition. Regions aggregate hospital models, and the global layer aggregates regional models.</p><figure><figcaption>Three-layer topology</figcaption><pre><code>
+Hospital SuperNodes
+  -&gt; region-eu / region-na SuperLinks
+    -&gt; regional checkpoints
+      -&gt; RegionGateway SuperNodes
+        -&gt; global SuperLink
+          -&gt; global checkpoint</code></pre></figure><h2>Roadmap</h2><ol><li>Prepare the environment, Kaggle CLI, and dependencies.</li><li>Download and clean CIC-IDS2017 without committing raw data.</li><li>Create six non-IID partitions with seed 123.</li><li>Start SuperLinks, SuperNodes, and SuperExecs with Docker Compose.</li><li>Run regional federations with hospitals as clients.</li><li>Run the global federation with regional gateways as clients.</li><li>Evaluate the global checkpoint and review privacy boundaries.</li></ol><h2>Code map</h2><table><thead><tr><th>Path</th><th>Responsibility</th></tr></thead><tbody><tr><td><code>hfl_cicids/config.py</code></td><td>Simulated topology: hospitals, regions, paths, and checkpoints.</td></tr><tr><td><code>hfl_cicids/task.py</code></td><td>PyTorch dataset, MLP, and local training loop.</td></tr><tr><td><code>hfl_cicids/client_app.py</code></td><td>ClientApp for hospital nodes and regional gateway nodes.</td></tr><tr><td><code>hfl_cicids/server_app.py</code></td><td>Regional/global ServerApp with FedAvg.</td></tr><tr><td><code>hfl_cicids/checkpointing.py</code></td><td>Loads and saves Flower/PyTorch checkpoints.</td></tr><tr><td><code>hfl_cicids/metrics.py</code></td><td>Classification metrics and error rates.</td></tr><tr><td><code>scripts/download_kaggle.py</code></td><td>Reproducible download from the Kaggle mirror.</td></tr><tr><td><code>scripts/prepare_cicids.py</code></td><td>Centralized CSV cleaning into processed parquet.</td></tr><tr><td><code>scripts/make_partitions.py</code></td><td>Non-IID partitioning with seed and train-only scaler.</td></tr><tr><td><code>scripts/generate_compose.py</code></td><td>Generates SuperLinks, SuperNodes, and SuperExecs.</td></tr><tr><td><code>scripts/configure_flower_profiles.py</code></td><td>Writes local Flower CLI profiles.</td></tr><tr><td><code>scripts/run_hierarchical_rounds.py</code></td><td>Orchestrator that calls <code>flwr run</code>.</td></tr><tr><td><code>scripts/evaluate_global_model.py</code></td><td>Evaluates checkpoints against each hospital test split.</td></tr><tr><td><code>scripts/centralized_mlp_baseline.py</code></td><td>Non-federated centralized baseline.</td></tr><tr><td><code>scripts/local_only_baseline.py</code></td><td>Per-hospital baseline without collaboration.</td></tr><tr><td><code>scripts/flat_fl_baseline.py</code></td><td>Flat Flower baseline with all six hospitals.</td></tr><tr><td><code>scripts/render_runtime_notebook.py</code></td><td>Regenerates the rendered runtime notebook.</td></tr><tr><td><code>scripts/build_pages.py</code></td><td>Builds this handbook and HTML renders in <code>docs/</code>.</td></tr><tr><td><code>docs/</code></td><td>Static GitHub Pages book.</td></tr></tbody></table><div class="pager"><span></span><a href="01-setup.html">Next: 01 - Setup from scratch</a></div>
+    </main>
+  </div>
+</body>
+</html>

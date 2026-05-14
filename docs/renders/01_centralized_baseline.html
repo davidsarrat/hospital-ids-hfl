@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Render 01_centralized_baseline - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="active" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>Render: 01_centralized_baseline</h1><p>HTML render generated from 01_centralized_baseline.ipynb.</p></section><p><a href="../index.html">Back to handbook</a></p><h1>01 - Centralized and Local Baselines</h1>
+<p>This notebook provides non-hierarchical reference points for the same PyTorch MLP used in the Flower demo.</p>
+<ul><li>Centralized MLP: trains on all simulated hospital train splits.</li><li>Local-only MLP: trains one independent model per hospital.</li></ul>
+<p>These baselines are for comparison. The main architecture demonstration remains hierarchical Flower FedAvg.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><pre><code>from pathlib import Path
+import os
+
+root = Path.cwd().parent if Path.cwd().name == &#x27;notebooks&#x27; else Path.cwd()
+os.chdir(root)
+root</code></pre></figure></section><h2>Centralized MLP</h2>
+<p>This command violates the federated privacy boundary on purpose: it concatenates all simulated hospital train splits. It is useful only as a performance reference.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><pre><code># !python scripts/centralized_mlp_baseline.py --epochs 3 --batch-size 1024</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><pre><code>import pandas as pd
+path = Path(&#x27;reports/centralized_mlp_metrics.csv&#x27;)
+pd.read_csv(path) if path.exists() else &#x27;Run the centralized baseline cell first.&#x27;</code></pre></figure></section><h2>Local-Only Models</h2>
+<p>Each hospital trains independently on its own partition. This approximates the no-collaboration baseline.</p><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><pre><code># !python scripts/local_only_baseline.py --epochs 3 --batch-size 1024</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 8</p><figure><pre><code>path = Path(&#x27;reports/local_only_metrics.csv&#x27;)
+pd.read_csv(path) if path.exists() else &#x27;Run the local-only baseline cell first.&#x27;</code></pre></figure></section>
+    </main>
+  </div>
+</body>
+</html>

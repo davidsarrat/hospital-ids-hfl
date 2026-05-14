@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>02 - Reproducible data pipeline - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="active" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>02 - Reproducible data pipeline</h1><p>How CIC-IDS2017 CSVs become six simulated hospital partitions with a non-IID split.</p></section><h2>Cleaning</h2><p>The cleaning step concatenates the CSVs, normalizes column names, finds the Label column, maps BENIGN to 0 and every attack to 1, drops metadata/leakage columns, and keeps numeric features.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/prepare_cicids.py#L54-L122">scripts/prepare_cicids.py:54-122</a></figcaption><pre><code>  54  def clean_cicids_csvs(
+  55      raw_dir: Path,
+  56      max_missing_fraction: float = 0.40,
+  57      max_rows: int | None = None,
+  58      global_impute: bool = False,
+  59  ) -&gt; tuple[pd.DataFrame, dict]:
+  60      csvs = sorted(raw_dir.rglob(&quot;*.csv&quot;))
+  61      if not csvs:
+  62          raise FileNotFoundError(f&quot;No CIC-IDS2017 CSV files found under {raw_dir}&quot;)
+  63  
+  64      frames = []
+  65      for csv_path in csvs:
+  66          console.print(f&quot;Reading {csv_path}&quot;)
+  67          frame = _read_csv(csv_path)
+  68          frame.columns = _unique_columns([str(c) for c in frame.columns])
+  69          frames.append(frame)
+  70  
+  71      df = pd.concat(frames, ignore_index=True)
+  72      if max_rows is not None and max_rows &gt; 0 and len(df) &gt; max_rows:
+  73          df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
+  74  
+  75      label_cols = [c for c in df.columns if c.strip().lower() == &quot;label&quot;]
+  76      if not label_cols:
+  77          raise ValueError(&quot;Could not find a CIC-IDS2017 label column&quot;)
+  78      label_col = label_cols[0]
+  79  
+  80      raw_labels = df[label_col].astype(str).str.strip()
+  81      attack_type = raw_labels.str.upper().replace({&quot;&quot;: &quot;UNKNOWN&quot;})
+  82      labels = (attack_type != &quot;BENIGN&quot;).astype(&quot;int64&quot;)
+  83  
+  84      drop_cols = {label_col}
+  85      for col in df.columns:
+  86          base_col = col.strip().lower().split(&quot;__&quot;, maxsplit=1)[0]
+  87          if base_col in LEAKAGE_COLUMNS:
+  88              drop_cols.add(col)
+  89  
+  90      features = df.drop(columns=list(drop_cols), errors=&quot;ignore&quot;)
+  91      numeric = features.apply(pd.to_numeric, errors=&quot;coerce&quot;)
+  92      numeric = numeric.replace([np.inf, -np.inf], np.nan)
+  93  
+  94      missing_fraction = numeric.isna().mean()
+  95      kept_cols = missing_fraction[missing_fraction &lt;= max_missing_fraction].index.tolist()
+  96      dropped_cols = sorted(set(numeric.columns) - set(kept_cols))
+  97      numeric = numeric[kept_cols]
+  98  
+  99      if global_impute:
+ 100          medians = numeric.median(numeric_only=True).fillna(0.0)
+ 101          numeric = numeric.fillna(medians)
+ 102  
+ 103      cleaned = numeric.copy()
+ 104      cleaned[&quot;label&quot;] = labels
+ 105      cleaned[&quot;attack_type&quot;] = attack_type
+ 106  
+ 107      metadata = {
+ 108          &quot;source_files&quot;: [str(path) for path in csvs],
+ 109          &quot;rows&quot;: int(len(cleaned)),
+ 110          &quot;feature_columns&quot;: kept_cols,
+ 111          &quot;num_features&quot;: int(len(kept_cols)),
+ 112          &quot;label_mapping&quot;: {&quot;BENIGN&quot;: 0, &quot;ATTACK&quot;: 1},
+ 113          &quot;attack_distribution&quot;: attack_type.value_counts().to_dict(),
+ 114          &quot;dropped_columns&quot;: dropped_cols,
+ 115          &quot;max_missing_fraction&quot;: max_missing_fraction,
+ 116          &quot;global_impute&quot;: global_impute,
+ 117          &quot;note&quot;: (
+ 118              &quot;Final train-only imputation and standardization are performed by &quot;
+ 119              &quot;scripts/make_partitions.py.&quot;
+ 120          ),
+ 121      }
+ 122      return cleaned, metadata</code></pre></figure><h2>Non-IID split with seed 123</h2><p>Partitioning assigns attack groups to hospitals with biased weights. This makes each hospital see a different distribution, which is the interesting case for FL.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L31-L72">Attack grouping and hospital preferences</a></figcaption><pre><code>  31  def attack_group(label: str) -&gt; str:
+  32      value = str(label).strip().upper()
+  33      if value == &quot;BENIGN&quot;:
+  34          return &quot;BENIGN&quot;
+  35      if &quot;DDOS&quot; in value:
+  36          return &quot;DDOS&quot;
+  37      if &quot;HEARTBLEED&quot; in value:
+  38          return &quot;HEARTBLEED&quot;
+  39      if &quot;DOS&quot; in value:
+  40          return &quot;DOS&quot;
+  41      if &quot;FTP&quot; in value or &quot;SSH&quot; in value or &quot;BRUTE&quot; in value or &quot;PATATOR&quot; in value:
+  42          return &quot;BRUTE_FORCE&quot;
+  43      if &quot;WEB&quot; in value:
+  44          return &quot;WEB&quot;
+  45      if &quot;PORTSCAN&quot; in value or &quot;PORT SCAN&quot; in value:
+  46          return &quot;PORTSCAN&quot;
+  47      if &quot;BOT&quot; in value:
+  48          return &quot;BOTNET&quot;
+  49      if &quot;INFILTRATION&quot; in value:
+  50          return &quot;INFILTRATION&quot;
+  51      return &quot;OTHER_ATTACK&quot;
+  52  
+  53  
+  54  def _allocation_weights(
+  55      group: str,
+  56      hospitals: tuple[Hospital, ...],
+  57      rng: np.random.Generator,
+  58      alpha: float,
+  59  ) -&gt; np.ndarray:
+  60      base = rng.dirichlet(np.full(len(hospitals), alpha))
+  61      preference = np.array(
+  62          [3.0 if group in hospital.preferred_attack_groups else 0.25 for hospital in hospitals],
+  63          dtype=float,
+  64      )
+  65      if group != &quot;BENIGN&quot;:
+  66          preference += np.array(
+  67              [0.50 if hospital.hospital_id == &quot;hospital_na_03&quot; else 0.0 for hospital in hospitals]
+  68          )
+  69      weights = base * preference
+  70      if weights.sum() &lt;= 0:
+  71          weights = np.ones(len(hospitals), dtype=float)
+  72      return weights / weights.sum()</code></pre></figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L112-L128">Dirichlet assignment by group</a></figcaption><pre><code> 112  def allocate_hospitals(df: pd.DataFrame, alpha: float, seed: int) -&gt; pd.Series:
+ 113      rng = np.random.default_rng(seed)
+ 114      hospital_ids = np.array([hospital.hospital_id for hospital in HOSPITALS])
+ 115      groups = df[&quot;attack_type&quot;].map(attack_group) if &quot;attack_type&quot; in df.columns else df[&quot;label&quot;].map(str)
+ 116      assignments = pd.Series(index=df.index, dtype=&quot;object&quot;)
+ 117  
+ 118      for group, group_index in groups.groupby(groups).groups.items():
+ 119          idx = np.array(list(group_index))
+ 120          weights = _allocation_weights(str(group), HOSPITALS, rng, alpha)
+ 121          assignments.loc[idx] = rng.choice(hospital_ids, size=len(idx), p=weights)
+ 122  
+ 123      benign_mask = groups == &quot;BENIGN&quot;
+ 124      attack_mask = groups != &quot;BENIGN&quot;
+ 125      _repair_min_group_rows(assignments, benign_mask, min_rows=10, rng=rng)
+ 126      _repair_min_group_rows(assignments, attack_mask, min_rows=1, rng=rng)
+ 127  
+ 128      return assignments</code></pre></figure><h2>Train-only scaling</h2><p>The MVP demo fits imputation and standardization from the simulated train splits. It then transforms train, validation, and test for every hospital with those values.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L167-L193">scripts/make_partitions.py:167-193</a></figcaption><pre><code> 167  def _fit_scaler(train_frames: list[pd.DataFrame], feature_cols: list[str]) -&gt; dict:
+ 168      train_features = pd.concat([frame[feature_cols] for frame in train_frames], ignore_index=True)
+ 169      train_features = train_features.replace([np.inf, -np.inf], np.nan)
+ 170      impute_values = train_features.median(numeric_only=True).fillna(0.0)
+ 171      imputed = train_features.fillna(impute_values)
+ 172      means = imputed.mean(numeric_only=True)
+ 173      stds = imputed.std(numeric_only=True, ddof=0).replace(0.0, 1.0).fillna(1.0)
+ 174      return {
+ 175          &quot;features&quot;: feature_cols,
+ 176          &quot;impute_values&quot;: {col: float(impute_values[col]) for col in feature_cols},
+ 177          &quot;mean&quot;: {col: float(means[col]) for col in feature_cols},
+ 178          &quot;std&quot;: {col: float(stds[col]) for col in feature_cols},
+ 179          &quot;fitted_on&quot;: &quot;concatenated hospital train splits&quot;,
+ 180      }
+ 181  
+ 182  
+ 183  def _transform_split(df: pd.DataFrame, scaler: dict) -&gt; pd.DataFrame:
+ 184      feature_cols = list(scaler[&quot;features&quot;])
+ 185      x = df[feature_cols].astype(&quot;float64&quot;).replace([np.inf, -np.inf], np.nan)
+ 186      impute = pd.Series(scaler[&quot;impute_values&quot;])
+ 187      mean = pd.Series(scaler[&quot;mean&quot;])
+ 188      std = pd.Series(scaler[&quot;std&quot;])
+ 189      x = x.fillna(impute)
+ 190      x = (x - mean) / std
+ 191      out = x.astype(&quot;float32&quot;)
+ 192      out[&quot;label&quot;] = df[&quot;label&quot;].astype(&quot;int64&quot;).to_numpy()
+ 193      return out</code></pre></figure><h2>Expected output</h2><figure><figcaption>Local artifacts ignored by Git</figcaption><pre><code>
+data/partitions/hospital_eu_01/train.parquet
+data/partitions/hospital_eu_01/val.parquet
+data/partitions/hospital_eu_01/test.parquet
+data/partitions/hospital_eu_01/metadata.json
+...
+shared/preprocessing/scaler.json</code></pre></figure><div class="pager"><a href="01-setup.html">Previous: 01 - Setup from scratch</a><span></span><a href="03-flower-runtime.html">Next: 03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a></div>
+    </main>
+  </div>
+</body>
+</html>

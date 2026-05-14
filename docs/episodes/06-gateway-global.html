@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>06 - Regional gateway and global aggregation - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="active" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>06 - Regional gateway and global aggregation</h1><p>The key piece: the global layer sees regions as clients, not hospitals.</p></section><h2>ClientApp in gateway mode</h2><p>The gateway does not train. It loads the already aggregated regional checkpoint and its metadata. It returns that model to the global SuperLink as a client update.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L87-L130">hfl_cicids/client_app.py:87-130</a></figcaption><pre><code>  87  def _train_region_gateway(msg: Message, context: Context) -&gt; Message:
+  88      &quot;&quot;&quot;Return an already aggregated regional checkpoint to the global hub.
+  89  
+  90      The region gateway is a parent-layer client. It does not train on rows and
+  91      should only mount shared checkpoints, never hospital partition directories.
+  92      &quot;&quot;&quot;
+  93  
+  94      region = str(context.node_config[&quot;region&quot;])
+  95      checkpoint_root = Path(str(context.node_config[&quot;checkpoint-root&quot;]))
+  96      config = _msg_config(msg)
+  97      global_round = int(config.get(&quot;global-round&quot;, context.run_config.get(&quot;global-round&quot;, 1)))
+  98  
+  99      ckpt = checkpoint_root / region / f&quot;round_{global_round}.pt&quot;
+ 100      meta = ckpt.with_suffix(&quot;.metadata.json&quot;)
+ 101  
+ 102      if not ckpt.exists():
+ 103          raise FileNotFoundError(f&quot;Regional checkpoint not found: {ckpt}&quot;)
+ 104  
+ 105      if not meta.exists():
+ 106          raise FileNotFoundError(f&quot;Regional checkpoint metadata not found: {meta}&quot;)
+ 107  
+ 108      metadata = json.loads(meta.read_text())
+ 109      input_dim = int(metadata[&quot;input_dim&quot;])
+ 110      num_examples = int(metadata[&quot;num_examples&quot;])
+ 111  
+ 112      model = TabularIDSNet(input_dim=input_dim)
+ 113      model.load_state_dict(torch.load(ckpt, map_location=&quot;cpu&quot;, weights_only=True))
+ 114  
+ 115      metrics = {
+ 116          &quot;num-examples&quot;: num_examples,
+ 117          &quot;regional_val_f1&quot;: float(metadata.get(&quot;val_f1&quot;, 0.0)),
+ 118          &quot;regional_val_roc_auc&quot;: float(metadata.get(&quot;val_roc_auc&quot;, 0.0)),
+ 119          &quot;regional_val_auprc&quot;: float(metadata.get(&quot;val_auprc&quot;, 0.0)),
+ 120      }
+ 121  
+ 122      return Message(
+ 123          content=RecordDict(
+ 124              {
+ 125                  &quot;arrays&quot;: ArrayRecord(model.state_dict()),
+ 126                  &quot;metrics&quot;: MetricRecord(metrics),
+ 127              }
+ 128          ),
+ 129          reply_to=msg,
+ 130      )</code></pre></figure><h2>ServerApp global</h2><p>The global layer uses FedAvg again, but now its clients are gateways. Each gateway is weighted by the total number of training examples in its region.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L88-L124">hfl_cicids/server_app.py:88-124</a></figcaption><pre><code>  88  def _run_global_serverapp(grid: Grid, context: Context) -&gt; None:
+  89      &quot;&quot;&quot;Aggregate regional gateway updates at the global hub.&quot;&quot;&quot;
+  90  
+  91      min_train_nodes = int(context.run_config[&quot;min-train-nodes&quot;])
+  92  
+  93      strategy = FedAvg(
+  94          fraction_train=1.0,
+  95          fraction_evaluate=0.0,
+  96          min_train_nodes=min_train_nodes,
+  97          min_evaluate_nodes=0,
+  98          min_available_nodes=min_train_nodes,
+  99          weighted_by_key=&quot;num-examples&quot;,
+ 100      )
+ 101  
+ 102      result = strategy.start(
+ 103          grid=grid,
+ 104          initial_arrays=_initial_arrays(context),
+ 105          num_rounds=1,
+ 106          train_config=ConfigRecord(
+ 107              {
+ 108                  &quot;global-round&quot;: int(context.run_config[&quot;global-round&quot;]),
+ 109              }
+ 110          ),
+ 111      )
+ 112  
+ 113      output_checkpoint = Path(str(context.run_config[&quot;output-checkpoint&quot;]))
+ 114      save_arrayrecord_checkpoint(
+ 115          result.arrays,
+ 116          output_checkpoint,
+ 117          extra_metadata={
+ 118              &quot;level&quot;: &quot;global&quot;,
+ 119              &quot;global_round&quot;: int(context.run_config[&quot;global-round&quot;]),
+ 120              &quot;input_dim&quot;: int(context.run_config[&quot;input-dim&quot;]),
+ 121              &quot;num_examples&quot;: int(context.run_config.get(&quot;global-num-examples&quot;, 1)),
+ 122              &quot;weighted_by_key&quot;: &quot;num-examples&quot;,
+ 123          },
+ 124      )</code></pre></figure><h2>Formula</h2><figure><figcaption>Global FedAvg weighted by region</figcaption><pre><code>
+N_global = sum_r N_r
+theta_global = sum_r (N_r / N_global) * theta_r</code></pre></figure><aside class="callout"><strong>Why this matters</strong><p>This is the difference between a real hierarchical demo and a Python script that averages files. The global checkpoint comes from a Flower federation with a global SuperLink.</p></aside><div class="pager"><a href="05-serverapp-fedavg.html">Previous: 05 - Regional ServerApp and FedAvg</a><span></span><a href="07-orchestration.html">Next: 07 - Orchestration, Docker, and logs</a></div>
+    </main>
+  </div>
+</body>
+</html>

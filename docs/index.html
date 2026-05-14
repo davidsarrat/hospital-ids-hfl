@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Home - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="active" href="index.html">Home</a>
+<a class="" href="episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>Deployment handbook: Hierarchical Flower with CIC-IDS2017</h1><p>A from-scratch guide to understand and run the demo: data, Flower nodes, gateways, orchestration, evaluation, and privacy boundaries.</p></section><aside class="callout"><strong>Fast path</strong><p>If you only want to inspect the infrastructure, start with episode 00 and open the rendered notebook 04. If you want to reproduce everything, follow the episodes in order.</p></aside><h2>Episode roadmap</h2><table><thead><tr><th>#</th><th>Episode</th><th>What you learn</th></tr></thead><tbody><tr><td>00</td><td><a href="episodes/00-roadmap.html">00 - Mental model and topology</a></td><td>The complete architecture before touching commands: hospitals, regions, gateways, and the global hub.</td></tr><tr><td>01</td><td><a href="episodes/01-setup.html">01 - Setup from scratch</a></td><td>How to prepare Python, dependencies, Kaggle credentials, and the main targets.</td></tr><tr><td>02</td><td><a href="episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a></td><td>How CIC-IDS2017 CSVs become six simulated hospital partitions with a non-IID split.</td></tr><tr><td>03</td><td><a href="episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a></td><td>What each Flower Deployment Runtime component does and how it connects in Docker.</td></tr><tr><td>04</td><td><a href="episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a></td><td>How local parquet is loaded, the MLP is trained, and an update is returned to Flower.</td></tr><tr><td>05</td><td><a href="episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a></td><td>How the regional server aggregates hospitals and writes regional checkpoints.</td></tr><tr><td>06</td><td><a href="episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a></td><td>The key piece: the global layer sees regions as clients, not hospitals.</td></tr><tr><td>07</td><td><a href="episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a></td><td>How federations are actuated from a script and what to inspect when something fails.</td></tr><tr><td>08</td><td><a href="episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a></td><td>How the result is measured and which limitations should remain explicit.</td></tr></tbody></table><h2>HTML Renders</h2><ul><li><a href="renders/04_flower_runtime_orchestration.html">Rendered notebook 04: Flower Runtime Orchestration</a></li><li><a href="renders/03_hierarchical_flower_demo.html">Notebook 03: hierarchical demo</a></li><li><a href="renders/00_dataset_and_partitioning.html">Notebook 00: dataset and partitioning</a></li></ul><h2>Full command path</h2><pre class="command"><code>python -m pip install -e .
+make data
+make partition SEED=123
+make compose
+make flower-config
+make up
+make train GLOBAL_ROUNDS=3 REGIONAL_ROUNDS=2
+make eval GLOBAL_ROUNDS=3
+make render-runtime-notebook
+make pages</code></pre><h2>Direct demo</h2><p>For a compact run that starts the topology, launches one hierarchical round, evaluates the checkpoint, and prints the metrics summary at the end:</p><pre class="command"><code>make demo</code></pre>
+    </main>
+  </div>
+</body>
+</html>

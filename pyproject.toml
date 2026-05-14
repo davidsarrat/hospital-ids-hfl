@@ -38,6 +38,7 @@ hfl-configure-flower = "scripts.configure_flower_profiles:app"
 hfl-centralized-mlp = "scripts.centralized_mlp_baseline:app"
 hfl-local-only = "scripts.local_only_baseline:app"
 hfl-flat-fl = "scripts.flat_fl_baseline:app"
+hfl-build-pages = "scripts.build_pages:main"
 
 [tool.setuptools]
 packages = ["hfl_cicids", "scripts"]

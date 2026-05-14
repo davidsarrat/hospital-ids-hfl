@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Render 03_hierarchical_flower_demo - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="active" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>Render: 03_hierarchical_flower_demo</h1><p>HTML render generated from 03_hierarchical_flower_demo.ipynb.</p></section><p><a href="../index.html">Back to handbook</a></p><h1>03 - Hierarchical Flower Demo</h1>
+<p>This notebook runs the target three-layer topology:</p>
+<ul><li>Hospital SuperNodes train on local CIC-IDS2017 partitions.</li><li>Regional SuperLinks aggregate hospital updates into regional checkpoints.</li><li>RegionGateway SuperNodes expose only regional checkpoints to the global SuperLink.</li><li>The global SuperLink aggregates regional models into the global checkpoint.</li></ul><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><pre><code>from pathlib import Path
+import os
+
+root = Path.cwd().parent if Path.cwd().name == &#x27;notebooks&#x27; else Path.cwd()
+os.chdir(root)
+root</code></pre></figure></section><h2>1. Generate and Validate Compose</h2>
+<p>The generated Compose file contains two regional SuperLinks, one global SuperLink, six hospital SuperNodes, and two gateway SuperNodes.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><pre><code># !python scripts/generate_compose.py
+# !python scripts/configure_flower_profiles.py
+# !docker compose config --quiet</code></pre></figure></section><h2>2. Start the Simulated Infrastructure</h2>
+<p>For local development this uses Flower `--insecure`. Production-like deployments should add TLS, SuperNode authentication, and stronger network segmentation.</p><section class="notebook-cell"><p class="cell-label">Code cell 6</p><figure><pre><code># !docker compose up --build -d
+# !docker compose ps</code></pre></figure></section><h2>3. Run Hierarchical Training</h2>
+<p>The orchestrator launches one Flower run per region and one Flower run at the global layer for each global round. The global model is produced by the global Flower SuperLink, not by a plain Python averaging script.</p><section class="notebook-cell"><p class="cell-label">Code cell 8</p><figure><pre><code># !python scripts/run_hierarchical_rounds.py --global-rounds 3 --regional-rounds 2</code></pre></figure></section><h2>4. Validate Artifacts</h2>
+<p>Each global round should produce regional checkpoints and a global checkpoint. `shared/` must not contain raw CSV/parquet data.</p><section class="notebook-cell"><p class="cell-label">Code cell 10</p><figure><pre><code>checkpoints = sorted(Path(&#x27;shared/checkpoints&#x27;).rglob(&#x27;*.pt&#x27;))
+data_leaks = sorted(list(Path(&#x27;shared&#x27;).rglob(&#x27;*.csv&#x27;)) + list(Path(&#x27;shared&#x27;).rglob(&#x27;*.parquet&#x27;)))
+checkpoints, data_leaks</code></pre></figure></section><h2>5. Evaluate the Global Model</h2>
+<p>The evaluator reports per-hospital metrics and a global summary. Metrics include F1, ROC-AUC, AUPRC, false-positive rate, and false-negative rate.</p><section class="notebook-cell"><p class="cell-label">Code cell 12</p><figure><pre><code># !python scripts/evaluate_global_model.py --checkpoint shared/checkpoints/global/round_3.pt</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 13</p><figure><pre><code>import pandas as pd
+detail = Path(&#x27;reports/metrics_summary.csv&#x27;)
+summary = Path(&#x27;reports/metrics_summary_global.csv&#x27;)
+if summary.exists():
+    display(pd.read_csv(summary))
+elif detail.exists():
+    display(pd.read_csv(detail).head())
+else:
+    print(&#x27;Run hierarchical training and evaluation first.&#x27;)</code></pre></figure></section>
+    </main>
+  </div>
+</body>
+</html>

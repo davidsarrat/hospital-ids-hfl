@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>05 - Regional ServerApp and FedAvg - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="active" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>05 - Regional ServerApp and FedAvg</h1><p>How the regional server aggregates hospitals and writes regional checkpoints.</p></section><h2>Shared entry point</h2><p>The ServerApp reads <code>level</code> from the run config. This lets the same component serve a regional federation or the global federation.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L16-L41">hfl_cicids/server_app.py:16-41</a></figcaption><pre><code>  16  @app.main()
+  17  def main(grid: Grid, context: Context) -&gt; None:
+  18      level = str(context.run_config[&quot;level&quot;])
+  19  
+  20      if level == &quot;regional&quot;:
+  21          _run_regional_serverapp(grid, context)
+  22      elif level == &quot;global&quot;:
+  23          _run_global_serverapp(grid, context)
+  24      else:
+  25          raise ValueError(f&quot;Unknown FL level: {level}&quot;)
+  26  
+  27  
+  28  def _initial_arrays(context: Context) -&gt; ArrayRecord:
+  29      input_dim = int(context.run_config.get(&quot;input-dim&quot;, 0))
+  30      if input_dim &lt;= 0:
+  31          raise ValueError(&quot;Run config must define input-dim&quot;)
+  32  
+  33      model = TabularIDSNet(input_dim=input_dim)
+  34  
+  35      init_checkpoint = str(context.run_config.get(&quot;init-checkpoint&quot;, &quot;&quot;))
+  36      if init_checkpoint:
+  37          path = Path(init_checkpoint)
+  38          if path.exists():
+  39              model.load_state_dict(torch.load(path, map_location=&quot;cpu&quot;, weights_only=True))
+  40  
+  41      return ArrayRecord(model.state_dict())</code></pre></figure><h2>Regional federation</h2><p>Each region uses FedAvg with <code>weighted_by_key='num-examples'</code>. The clients are the hospitals connected to the regional SuperLink.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L44-L85">hfl_cicids/server_app.py:44-85</a></figcaption><pre><code>  44  def _run_regional_serverapp(grid: Grid, context: Context) -&gt; None:
+  45      &quot;&quot;&quot;Aggregate hospital SuperNode updates inside one region.&quot;&quot;&quot;
+  46  
+  47      num_rounds = int(context.run_config[&quot;num-server-rounds&quot;])
+  48      lr = float(context.run_config[&quot;learning-rate&quot;])
+  49      min_train_nodes = int(context.run_config[&quot;min-train-nodes&quot;])
+  50  
+  51      strategy = FedAvg(
+  52          fraction_train=float(context.run_config[&quot;fraction-train&quot;]),
+  53          fraction_evaluate=float(context.run_config[&quot;fraction-evaluate&quot;]),
+  54          min_train_nodes=min_train_nodes,
+  55          min_evaluate_nodes=int(context.run_config[&quot;min-evaluate-nodes&quot;]),
+  56          min_available_nodes=int(context.run_config[&quot;min-available-nodes&quot;]),
+  57          weighted_by_key=&quot;num-examples&quot;,
+  58      )
+  59  
+  60      result = strategy.start(
+  61          grid=grid,
+  62          initial_arrays=_initial_arrays(context),
+  63          num_rounds=num_rounds,
+  64          train_config=ConfigRecord(
+  65              {
+  66                  &quot;lr&quot;: lr,
+  67                  &quot;global-round&quot;: int(context.run_config[&quot;global-round&quot;]),
+  68              }
+  69          ),
+  70      )
+  71  
+  72      output_checkpoint = Path(str(context.run_config[&quot;output-checkpoint&quot;]))
+  73      save_arrayrecord_checkpoint(
+  74          result.arrays,
+  75          output_checkpoint,
+  76          extra_metadata={
+  77              &quot;level&quot;: &quot;regional&quot;,
+  78              &quot;region&quot;: str(context.run_config[&quot;region&quot;]),
+  79              &quot;global_round&quot;: int(context.run_config[&quot;global-round&quot;]),
+  80              &quot;regional_rounds&quot;: num_rounds,
+  81              &quot;input_dim&quot;: int(context.run_config[&quot;input-dim&quot;]),
+  82              &quot;num_examples&quot;: int(context.run_config.get(&quot;region-num-examples&quot;, 1)),
+  83              &quot;weighted_by_key&quot;: &quot;num-examples&quot;,
+  84          },
+  85      )</code></pre></figure><h2>Formula</h2><figure><figcaption>Regional FedAvg weighted by examples</figcaption><pre><code>
+N_r = sum_h n_h
+theta_r = sum_h (n_h / N_r) * theta_h</code></pre></figure><div class="pager"><a href="04-model-clientapp.html">Previous: 04 - Model and hospital ClientApp</a><span></span><a href="06-gateway-global.html">Next: 06 - Regional gateway and global aggregation</a></div>
+    </main>
+  </div>
+</body>
+</html>

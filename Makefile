@@ -1,10 +1,13 @@
-.PHONY: install data partition compose flower-config up down train eval render-runtime-notebook baselines flat local centralized clean
+.PHONY: install data partition compose flower-config up down train eval demo render-runtime-notebook pages baselines flat local centralized clean
 
 SEED ?= 123
 GLOBAL_ROUNDS ?= 3
 REGIONAL_ROUNDS ?= 2
 EPOCHS ?= 3
 BATCH_SIZE ?= 1024
+DEMO_GLOBAL_ROUNDS ?= 1
+DEMO_REGIONAL_ROUNDS ?= 1
+DEMO_BATCH_SIZE ?= 8192
 
 install:
 	python -m pip install -e .
@@ -37,8 +40,24 @@ eval:
 	python scripts/evaluate_global_model.py \
 		--checkpoint shared/checkpoints/global/round_$(GLOBAL_ROUNDS).pt
 
+demo: compose flower-config up
+	python scripts/run_hierarchical_rounds.py \
+		--global-rounds $(DEMO_GLOBAL_ROUNDS) \
+		--regional-rounds $(DEMO_REGIONAL_ROUNDS) \
+		--batch-size $(DEMO_BATCH_SIZE)
+	python scripts/evaluate_global_model.py \
+		--checkpoint shared/checkpoints/global/round_$(DEMO_GLOBAL_ROUNDS).pt \
+		--batch-size $(DEMO_BATCH_SIZE)
+	python scripts/render_runtime_notebook.py
+	python scripts/build_pages.py
+	@printf '\nGlobal metrics summary:\n'
+	@cat reports/metrics_summary_global.csv
+
 render-runtime-notebook:
 	python scripts/render_runtime_notebook.py
+
+pages:
+	python scripts/build_pages.py
 
 centralized:
 	python scripts/centralized_mlp_baseline.py --epochs $(EPOCHS) --batch-size $(BATCH_SIZE)

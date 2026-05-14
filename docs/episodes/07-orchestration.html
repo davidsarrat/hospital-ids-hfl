@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>07 - Orchestration, Docker, and logs - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="active" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>07 - Orchestration, Docker, and logs</h1><p>How federations are actuated from a script and what to inspect when something fails.</p></section><h2>Profiles Flower</h2><p>Profiles connect names like <code>region-eu</code> or <code>global</code> to each SuperLink endpoint.</p><pre class="command"><code>make flower-config
+flwr config list</code></pre><h2>Run config</h2><p>The orchestrator builds TOML strings for <code>--run-config</code>. Each run receives the level, region, initial checkpoint, output checkpoint, and weights.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L70-L95">scripts/run_hierarchical_rounds.py:70-95</a></figcaption><pre><code>  70  def _run_config(items: dict[str, object]) -&gt; str:
+  71      formatted = []
+  72      for key, value in items.items():
+  73          if isinstance(value, bool):
+  74              rendered = &quot;true&quot; if value else &quot;false&quot;
+  75          elif isinstance(value, int | float):
+  76              rendered = str(value)
+  77          else:
+  78              rendered = json.dumps(str(value))
+  79          formatted.append(f&quot;{key}={rendered}&quot;)
+  80      return &quot; &quot;.join(formatted)
+  81  
+  82  
+  83  def _run_flower(profile: str, run_config: dict[str, object], dry_run: bool) -&gt; None:
+  84      command = [
+  85          &quot;flwr&quot;,
+  86          &quot;run&quot;,
+  87          &quot;.&quot;,
+  88          profile,
+  89          &quot;--stream&quot;,
+  90          &quot;--run-config&quot;,
+  91          _run_config(run_config),
+  92      ]
+  93      console.print(f&quot;[bold]Running:[/bold] {shlex.join(command)}&quot;)
+  94      if not dry_run:
+  95          subprocess.run(command, check=True)</code></pre></figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L98-L166">scripts/run_hierarchical_rounds.py:98-166</a></figcaption><pre><code>  98  def _regional_run_config(
+  99      region: str,
+ 100      round_number: int,
+ 101      regional_rounds: int,
+ 102      input_dim: int,
+ 103      partitions_dir: Path,
+ 104      shared_dir: Path,
+ 105      runtime_shared_dir: Path,
+ 106      local_epochs: int,
+ 107      batch_size: int,
+ 108      learning_rate: float,
+ 109      allow_missing_metadata: bool,
+ 110  ) -&gt; dict[str, object]:
+ 111      min_nodes = len(hospitals_by_region(region))
+ 112      return {
+ 113          &quot;level&quot;: &quot;regional&quot;,
+ 114          &quot;region&quot;: region,
+ 115          &quot;global-round&quot;: round_number,
+ 116          &quot;init-checkpoint&quot;: global_checkpoint(round_number - 1, runtime_shared_dir),
+ 117          &quot;output-checkpoint&quot;: region_checkpoint(region, round_number, runtime_shared_dir),
+ 118          &quot;num-server-rounds&quot;: regional_rounds,
+ 119          &quot;local-epochs&quot;: local_epochs,
+ 120          &quot;batch-size&quot;: batch_size,
+ 121          &quot;learning-rate&quot;: learning_rate,
+ 122          &quot;input-dim&quot;: input_dim,
+ 123          &quot;region-num-examples&quot;: region_train_examples(
+ 124              region,
+ 125              partitions_dir,
+ 126              allow_missing=allow_missing_metadata,
+ 127          ),
+ 128          &quot;fraction-train&quot;: 1.0,
+ 129          &quot;fraction-evaluate&quot;: 1.0,
+ 130          &quot;min-train-nodes&quot;: min_nodes,
+ 131          &quot;min-evaluate-nodes&quot;: min_nodes,
+ 132          &quot;min-available-nodes&quot;: min_nodes,
+ 133      }
+ 134  
+ 135  
+ 136  def _global_run_config(
+ 137      round_number: int,
+ 138      input_dim: int,
+ 139      regions: list[str],
+ 140      partitions_dir: Path,
+ 141      shared_dir: Path,
+ 142      runtime_shared_dir: Path,
+ 143      batch_size: int,
+ 144      allow_missing_metadata: bool,
+ 145  ) -&gt; dict[str, object]:
+ 146      return {
+ 147          &quot;level&quot;: &quot;global&quot;,
+ 148          &quot;global-round&quot;: round_number,
+ 149          &quot;init-checkpoint&quot;: global_checkpoint(round_number - 1, runtime_shared_dir),
+ 150          &quot;output-checkpoint&quot;: global_checkpoint(round_number, runtime_shared_dir),
+ 151          &quot;num-server-rounds&quot;: 1,
+ 152          &quot;local-epochs&quot;: 1,
+ 153          &quot;batch-size&quot;: batch_size,
+ 154          &quot;learning-rate&quot;: 0.0,
+ 155          &quot;input-dim&quot;: input_dim,
+ 156          &quot;global-num-examples&quot;: global_train_examples(
+ 157              regions,
+ 158              partitions_dir,
+ 159              allow_missing=allow_missing_metadata,
+ 160          ),
+ 161          &quot;fraction-train&quot;: 1.0,
+ 162          &quot;fraction-evaluate&quot;: 0.0,
+ 163          &quot;min-train-nodes&quot;: len(regions),
+ 164          &quot;min-evaluate-nodes&quot;: 0,
+ 165          &quot;min-available-nodes&quot;: len(regions),
+ 166      }</code></pre></figure><h2>Hierarchical loop</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L208-L245">scripts/run_hierarchical_rounds.py:208-245</a></figcaption><pre><code> 208      for round_number in range(1, global_rounds + 1):
+ 209          console.rule(f&quot;Global round {round_number}&quot;)
+ 210          for region in selected_regions:
+ 211              profile = region.replace(&quot;_&quot;, &quot;-&quot;)
+ 212              _run_flower(
+ 213                  profile=profile,
+ 214                  run_config=_regional_run_config(
+ 215                      region=region,
+ 216                      round_number=round_number,
+ 217                      regional_rounds=regional_rounds,
+ 218                      input_dim=input_dim,
+ 219                      partitions_dir=partitions_dir,
+ 220                      shared_dir=shared_dir,
+ 221                      runtime_shared_dir=runtime_shared_dir,
+ 222                      local_epochs=local_epochs,
+ 223                      batch_size=batch_size,
+ 224                      learning_rate=learning_rate,
+ 225                      allow_missing_metadata=dry_run,
+ 226                  ),
+ 227                  dry_run=dry_run,
+ 228              )
+ 229  
+ 230          _run_flower(
+ 231              profile=&quot;global&quot;,
+ 232              run_config=_global_run_config(
+ 233                  round_number=round_number,
+ 234                  input_dim=input_dim,
+ 235                  regions=selected_regions,
+ 236                  partitions_dir=partitions_dir,
+ 237                  shared_dir=shared_dir,
+ 238                  runtime_shared_dir=runtime_shared_dir,
+ 239                  batch_size=batch_size,
+ 240                  allow_missing_metadata=dry_run,
+ 241              ),
+ 242              dry_run=dry_run,
+ 243          )
+ 244  
+ 245      console.print(f&quot;[green]Latest global checkpoint: {global_checkpoint(global_rounds, shared_dir)}[/green]&quot;)</code></pre></figure><h2>Diagnostic commands</h2><pre class="command"><code>docker compose ps
+docker compose logs --tail=80 region-eu-superlink
+docker compose logs --tail=80 hospital-eu-01-supernode
+docker compose logs --tail=80 region-eu-gateway-supernode
+docker compose logs --tail=80 global-superlink</code></pre><div class="pager"><a href="06-gateway-global.html">Previous: 06 - Regional gateway and global aggregation</a><span></span><a href="08-evaluation-privacy.html">Next: 08 - Evaluation, privacy, and next steps</a></div>
+    </main>
+  </div>
+</body>
+</html>

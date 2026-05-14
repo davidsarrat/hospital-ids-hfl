@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>01 - Setup from scratch - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="active" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>01 - Setup from scratch</h1><p>How to prepare Python, dependencies, Kaggle credentials, and the main targets.</p></section><h2>Prerequisites</h2><ul><li>Python 3.11 or another version compatible with Flower 1.29.</li><li>Docker Desktop or Docker Engine with Compose.</li><li>Kaggle CLI credentials stored outside the repository.</li><li>GitHub CLI only if you want to publish or configure Pages from the terminal.</li></ul><h2>Installation</h2><pre class="command"><code>python -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e .</code></pre><aside class="callout"><strong>Credentials</strong><p>Do not put real tokens in Git. Use environment variables or ~/.kaggle/kaggle.json. The repository ignores data, checkpoints, and common credential files.</p></aside><pre class="command"><code>export KAGGLE_API_TOKEN=&quot;&lt;kaggle_token&gt;&quot;
+make data
+make partition SEED=123</code></pre><h2>Main targets</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L1-L55">Makefile:1-55</a></figcaption><pre><code>   1  .PHONY: install data partition compose flower-config up down train eval demo render-runtime-notebook pages baselines flat local centralized clean
+   2  
+   3  SEED ?= 123
+   4  GLOBAL_ROUNDS ?= 3
+   5  REGIONAL_ROUNDS ?= 2
+   6  EPOCHS ?= 3
+   7  BATCH_SIZE ?= 1024
+   8  DEMO_GLOBAL_ROUNDS ?= 1
+   9  DEMO_REGIONAL_ROUNDS ?= 1
+  10  DEMO_BATCH_SIZE ?= 8192
+  11  
+  12  install:
+  13  	python -m pip install -e .
+  14  
+  15  data:
+  16  	python scripts/download_kaggle.py
+  17  	python scripts/prepare_cicids.py
+  18  
+  19  partition:
+  20  	python scripts/make_partitions.py --seed $(SEED)
+  21  
+  22  compose:
+  23  	python scripts/generate_compose.py --output docker-compose.yml
+  24  
+  25  flower-config:
+  26  	python scripts/configure_flower_profiles.py
+  27  
+  28  up:
+  29  	docker compose up --build -d
+  30  
+  31  down:
+  32  	docker compose down --remove-orphans
+  33  
+  34  train:
+  35  	python scripts/run_hierarchical_rounds.py \
+  36  		--global-rounds $(GLOBAL_ROUNDS) \
+  37  		--regional-rounds $(REGIONAL_ROUNDS)
+  38  
+  39  eval:
+  40  	python scripts/evaluate_global_model.py \
+  41  		--checkpoint shared/checkpoints/global/round_$(GLOBAL_ROUNDS).pt
+  42  
+  43  demo: compose flower-config up
+  44  	python scripts/run_hierarchical_rounds.py \
+  45  		--global-rounds $(DEMO_GLOBAL_ROUNDS) \
+  46  		--regional-rounds $(DEMO_REGIONAL_ROUNDS) \
+  47  		--batch-size $(DEMO_BATCH_SIZE)
+  48  	python scripts/evaluate_global_model.py \
+  49  		--checkpoint shared/checkpoints/global/round_$(DEMO_GLOBAL_ROUNDS).pt \
+  50  		--batch-size $(DEMO_BATCH_SIZE)
+  51  	python scripts/render_runtime_notebook.py
+  52  	python scripts/build_pages.py
+  53  	@printf &#x27;\nGlobal metrics summary:\n&#x27;
+  54  	@cat reports/metrics_summary_global.csv
+  55  </code></pre></figure><h2>Direct demo</h2><p>Once data and partitions exist, <code>make demo</code> starts Docker, runs one global round with one regional round, evaluates, and refreshes the renders.</p><pre class="command"><code>make demo</code></pre><h2>Package dependencies</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L15-L28">pyproject.toml:15-28</a></figcaption><pre><code>  15  dependencies = [
+  16    &quot;flwr[simulation]==1.29.0&quot;,
+  17    &quot;torch&gt;=2.3,&lt;3.0&quot;,
+  18    &quot;pandas&gt;=2.2&quot;,
+  19    &quot;numpy&gt;=1.26&quot;,
+  20    &quot;scikit-learn&gt;=1.5&quot;,
+  21    &quot;pyarrow&gt;=16.0&quot;,
+  22    &quot;kaggle&gt;=1.6&quot;,
+  23    &quot;typer&gt;=0.12&quot;,
+  24    &quot;rich&gt;=13.0&quot;,
+  25    &quot;pydantic&gt;=2.0&quot;,
+  26    &quot;matplotlib&gt;=3.8&quot;,
+  27    &quot;jupyter&gt;=1.0&quot;
+  28  ]</code></pre></figure><div class="pager"><a href="00-roadmap.html">Previous: 00 - Mental model and topology</a><span></span><a href="02-data-pipeline.html">Next: 02 - Reproducible data pipeline</a></div>
+    </main>
+  </div>
+</body>
+</html>

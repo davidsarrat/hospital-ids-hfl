@@ -86,10 +86,24 @@ Evaluate the final global checkpoint:
 make eval GLOBAL_ROUNDS=3
 ```
 
+For a compact end-to-end demo that launches the Flower topology, runs one global
+round, evaluates the resulting checkpoint, refreshes the rendered notebook, and
+prints the global metrics summary:
+
+```bash
+make demo
+```
+
 Render the component-level walkthrough notebook after a local run:
 
 ```bash
 make render-runtime-notebook
+```
+
+Build the static handbook for GitHub Pages:
+
+```bash
+make pages
 ```
 
 Expected outputs:
@@ -158,3 +172,9 @@ The orchestrator calls `flwr run . <profile> --stream --run-config ...` for ever
 ## Rendered Walkthroughs
 
 `notebooks/04_flower_runtime_orchestration.ipynb` is committed with rendered outputs. It shows the running SuperLinks, SuperNodes, SuperExec services, gateway nodes, Flower profiles, exact `flwr run` commands, checkpoint metadata, evaluation summary, and the `shared/` raw-data boundary check.
+
+The GitHub Pages handbook is generated into `docs/` and is intended to be served from:
+
+```text
+https://davidsarrat.github.io/hospital-ids-hfl/
+```
