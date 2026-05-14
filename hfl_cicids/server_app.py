@@ -41,6 +41,19 @@ def _initial_arrays(context: Context) -> ArrayRecord:
     return ArrayRecord(model.state_dict())
 
 
+def _metricrecord_to_dict(record: object | None) -> dict[str, float | int]:
+    if not record:
+        return {}
+
+    metrics: dict[str, float | int] = {}
+    for key, value in dict(record).items():
+        if isinstance(value, bool):
+            metrics[key] = int(value)
+        elif isinstance(value, int | float):
+            metrics[key] = value
+    return metrics
+
+
 def _run_regional_serverapp(grid: Grid, context: Context) -> None:
     """Aggregate hospital SuperNode updates inside one region."""
 
@@ -69,6 +82,13 @@ def _run_regional_serverapp(grid: Grid, context: Context) -> None:
         ),
     )
 
+    final_train_metrics = _metricrecord_to_dict(
+        result.train_metrics_clientapp.get(num_rounds)
+    )
+    final_eval_metrics = _metricrecord_to_dict(
+        result.evaluate_metrics_clientapp.get(num_rounds)
+    )
+
     output_checkpoint = Path(str(context.run_config["output-checkpoint"]))
     save_arrayrecord_checkpoint(
         result.arrays,
@@ -81,6 +101,17 @@ def _run_regional_serverapp(grid: Grid, context: Context) -> None:
             "input_dim": int(context.run_config["input-dim"]),
             "num_examples": int(context.run_config.get("region-num-examples", 1)),
             "weighted_by_key": "num-examples",
+            "val_f1": float(final_eval_metrics.get("eval_f1", 0.0)),
+            "val_roc_auc": float(final_eval_metrics.get("eval_roc_auc", 0.0)),
+            "val_auprc": float(final_eval_metrics.get("eval_auprc", 0.0)),
+            "val_false_positive_rate": float(
+                final_eval_metrics.get("eval_false_positive_rate", 0.0)
+            ),
+            "val_false_negative_rate": float(
+                final_eval_metrics.get("eval_false_negative_rate", 0.0)
+            ),
+            "final_train_metrics": final_train_metrics,
+            "final_evaluate_metrics": final_eval_metrics,
         },
     )
 

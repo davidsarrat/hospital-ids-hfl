@@ -23,68 +23,88 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
       <section class="hero"><p class="eyebrow">Handbook</p><h1>Render: 04_flower_runtime_orchestration</h1><p>HTML render generated from 04_flower_runtime_orchestration.ipynb.</p></section><p><a href="../index.html">Back to handbook</a></p><h1>04 - Flower Runtime Orchestration</h1>
-<p>Rendered snapshot of how the deployment runtime is actuated in this demo. Captured at `2026-05-14T01:21:59` from the local Docker/Flower topology.</p>
+<p>Rendered snapshot of how the deployment runtime is actuated in this demo. Captured at `2026-05-14T09:38:19` from the local Docker/Flower topology.</p>
 <p>The goal of this notebook is not to retrain the model. It shows which SuperLinks, SuperNodes and SuperExec services are running, what each one connects to, and which `flwr run` calls drive the regional and global layers.</p><h2>1. Running Services</h2>
-<p>There are three Flower federations running at the same time: `region-eu`, `region-na`, and `global`. Hospital SuperNodes connect to regional SuperLinks. Region gateway SuperNodes connect only to the global SuperLink.</p><section class="notebook-cell"><p class="cell-label">Code cell 3</p><figure><pre><code>!docker compose ps --format &#x27;table {{.Service}}\t{{.State}}\t{{.Ports}}&#x27;</code></pre></figure><figure><figcaption>Output</figcaption><pre><code>SERVICE                                 STATE     PORTS
-global-superexec-serverapp              running   
-global-superlink                        running   0.0.0.0:39093-&gt;9093/tcp, [::]:39093-&gt;9093/tcp
-hospital-eu-01-superexec-clientapp      running   
-hospital-eu-01-supernode                running   
-hospital-eu-02-superexec-clientapp      running   
-hospital-eu-02-supernode                running   
-hospital-eu-03-superexec-clientapp      running   
-hospital-eu-03-supernode                running   
-hospital-na-01-superexec-clientapp      running   
-hospital-na-01-supernode                running   
-hospital-na-02-superexec-clientapp      running   
-hospital-na-02-supernode                running   
-hospital-na-03-superexec-clientapp      running   
-hospital-na-03-supernode                running   
-region-eu-gateway-superexec-clientapp   running   
-region-eu-gateway-supernode             running   
-region-eu-superexec-serverapp           running   
-region-eu-superlink                     running   0.0.0.0:19093-&gt;9093/tcp, [::]:19093-&gt;9093/tcp
-region-na-gateway-superexec-clientapp   running   
-region-na-gateway-supernode             running   
-region-na-superexec-serverapp           running   
-region-na-superlink                     running   0.0.0.0:29093-&gt;9093/tcp, [::]:29093-&gt;9093/tcp</code></pre></figure></section><h2>2. Compose Roles</h2>
-<p>`SuperLink` services expose the Flower APIs. `SuperExec ServerApp` services execute the server application submitted through `flwr run`. Hospital `SuperNode` services receive tasks from their regional SuperLink, while gateway SuperNodes receive tasks from the global SuperLink. ClientApp SuperExec services execute `hfl_cicids.client_app` next to each SuperNode.</p><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><pre><code>from pathlib import Path
+<p>There are three Flower federations running at the same time: `region-eu`, `region-na`, and `global`. Hospital SuperNodes connect to regional SuperLinks. Region gateway SuperNodes connect only to the global SuperLink.</p><section class="notebook-cell"><p class="cell-label">Code cell 3</p><figure><div class="highlight"><pre><span></span>!docker compose ps --format &#39;table {{.Service}}\t{{.State}}\t{{.Ports}}&#39;
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>SERVICE                                   STATE     PORTS
+flat-hospital-eu-01-superexec-clientapp   running   
+flat-hospital-eu-01-supernode             running   
+flat-hospital-eu-02-superexec-clientapp   running   
+flat-hospital-eu-02-supernode             running   
+flat-hospital-eu-03-superexec-clientapp   running   
+flat-hospital-eu-03-supernode             running   
+flat-hospital-na-01-superexec-clientapp   running   
+flat-hospital-na-01-supernode             running   
+flat-hospital-na-02-superexec-clientapp   running   
+flat-hospital-na-02-supernode             running   
+flat-hospital-na-03-superexec-clientapp   running   
+flat-hospital-na-03-supernode             running   
+flat-superexec-serverapp                  running   
+flat-superlink                            running   0.0.0.0:49093-&gt;9093/tcp, [::]:49093-&gt;9093/tcp
+global-superexec-serverapp                running   
+global-superlink                          running   0.0.0.0:39093-&gt;9093/tcp, [::]:39093-&gt;9093/tcp
+hospital-eu-01-superexec-clientapp        running   
+hospital-eu-01-supernode                  running   
+hospital-eu-02-superexec-clientapp        running   
+hospital-eu-02-supernode                  running   
+hospital-eu-03-superexec-clientapp        running   
+hospital-eu-03-supernode                  running   
+hospital-na-01-superexec-clientapp        running   
+hospital-na-01-supernode                  running   
+hospital-na-02-superexec-clientapp        running   
+hospital-na-02-supernode                  running   
+hospital-na-03-superexec-clientapp        running   
+hospital-na-03-supernode                  running   
+region-eu-gateway-superexec-clientapp     running   
+region-eu-gateway-supernode               running   
+region-eu-superexec-serverapp             running   
+region-eu-superlink                       running   0.0.0.0:19093-&gt;9093/tcp, [::]:19093-&gt;9093/tcp
+region-na-gateway-superexec-clientapp     running   
+region-na-gateway-supernode               running   
+region-na-superexec-serverapp             running   
+region-na-superlink                       running   0.0.0.0:29093-&gt;9093/tcp, [::]:29093-&gt;9093/tcp
+</pre></div>
+</figure></section><h2>2. Compose Roles</h2>
+<p>`SuperLink` services expose the Flower APIs. `SuperExec ServerApp` services execute the server application submitted through `flwr run`. Hospital `SuperNode` services receive tasks from their regional SuperLink, while gateway SuperNodes receive tasks from the global SuperLink. ClientApp SuperExec services execute `hfl_cicids.client_app` next to each SuperNode.</p><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
 import pandas as pd
 import yaml
 
 def service_role(name):
-    if name.endswith(&#x27;-superlink&#x27;):
-        return &#x27;SuperLink&#x27;
-    if name.endswith(&#x27;-superexec-serverapp&#x27;):
-        return &#x27;SuperExec ServerApp&#x27;
-    if name.endswith(&#x27;-supernode&#x27;):
-        return &#x27;SuperNode&#x27;
-    if name.endswith(&#x27;-superexec-clientapp&#x27;):
-        return &#x27;SuperExec ClientApp&#x27;
-    return &#x27;service&#x27;
+    if name.endswith(&#39;-superlink&#39;):
+        return &#39;SuperLink&#39;
+    if name.endswith(&#39;-superexec-serverapp&#39;):
+        return &#39;SuperExec ServerApp&#39;
+    if name.endswith(&#39;-supernode&#39;):
+        return &#39;SuperNode&#39;
+    if name.endswith(&#39;-superexec-clientapp&#39;):
+        return &#39;SuperExec ClientApp&#39;
+    return &#39;service&#39;
 
 def list_arg(args, flag):
-    return args[args.index(flag) + 1] if flag in args else &#x27;&#x27;
+    return args[args.index(flag) + 1] if flag in args else &#39;&#39;
 
-compose = yaml.safe_load(Path(&#x27;docker-compose.yml&#x27;).read_text())
+compose = yaml.safe_load(Path(&#39;docker-compose.yml&#39;).read_text())
 rows = []
-for name, service in sorted(compose[&#x27;services&#x27;].items()):
-    if name.startswith(&#x27;flat-&#x27;):
+for name, service in sorted(compose[&#39;services&#39;].items()):
+    if name.startswith(&#39;flat-&#39;):
         continue
-    command = service.get(&#x27;command&#x27;, [])
+    command = service.get(&#39;command&#39;, [])
     rows.append({
-        &#x27;service&#x27;: name,
-        &#x27;role&#x27;: service_role(name),
-        &#x27;superlink_target&#x27;: list_arg(command, &#x27;--superlink&#x27;),
-        &#x27;appio_target&#x27;: list_arg(command, &#x27;--appio-api-address&#x27;),
-        &#x27;node_config&#x27;: list_arg(command, &#x27;--node-config&#x27;),
-        &#x27;volumes&#x27;: &#x27;, &#x27;.join(service.get(&#x27;volumes&#x27;, [])),
+        &#39;service&#39;: name,
+        &#39;role&#39;: service_role(name),
+        &#39;superlink_target&#39;: list_arg(command, &#39;--superlink&#39;),
+        &#39;appio_target&#39;: list_arg(command, &#39;--appio-api-address&#39;),
+        &#39;node_config&#39;: list_arg(command, &#39;--node-config&#39;),
+        &#39;volumes&#39;: &#39;, &#39;.join(service.get(&#39;volumes&#39;, [])),
     })
-pd.DataFrame(rows)</code></pre></figure><figure><figcaption>Output</figcaption><pre><code>                              service                role         superlink_target                     appio_target                                                                      node_config                                                     volumes
+pd.DataFrame(rows)
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>                              service                role         superlink_target                     appio_target                                                                      node_config                                                     volumes
            global-superexec-serverapp SuperExec ServerApp                                     global-superlink:9091                                                                                                                             ./shared:/shared
                      global-superlink           SuperLink                                                                                                                                                                                                       
    hospital-eu-01-superexec-clientapp SuperExec ClientApp                             hospital-eu-01-supernode:9094                                                                                  ./data/partitions/hospital_eu_01:/data:ro, ./shared:/shared
@@ -106,74 +126,90 @@ region-eu-gateway-superexec-clientapp SuperExec ClientApp                       
 region-na-gateway-superexec-clientapp SuperExec ClientApp                          region-na-gateway-supernode:9094                                                                                                                             ./shared:/shared
           region-na-gateway-supernode           SuperNode    global-superlink:9092                                    role=&quot;region-gateway&quot; region=&quot;region_na&quot; checkpoint-root=&quot;/shared/checkpoints&quot;                                            ./shared:/shared
         region-na-superexec-serverapp SuperExec ServerApp                                  region-na-superlink:9091                                                                                                                             ./shared:/shared
-                  region-na-superlink           SuperLink</code></pre></figure></section><h2>3. Flower Profiles</h2>
-<p>The profile names are what the orchestrator passes to `flwr run . &lt;profile&gt;`. Each profile points to one SuperLink control endpoint.</p><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><pre><code>!flwr config list</code></pre></figure><figure><figcaption>Output</figcaption><pre><code>Flower Config file: ~/.flwr/config.toml
+                  region-na-superlink           SuperLink
+</pre></div>
+</figure></section><h2>3. Flower Profiles</h2>
+<p>The profile names are what the orchestrator passes to `flwr run . &lt;profile&gt;`. Each profile points to one SuperLink control endpoint.</p><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><div class="highlight"><pre><span></span>!flwr config list
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>Flower Config file: ~/.flwr/config.toml
 SuperLink connections:
   region-eu (default)
   region-na
   global
-  flat</code></pre></figure></section><h2>4. Actuating the Federations</h2>
-<p>`scripts/run_hierarchical_rounds.py` is the control plane for the demo. For each global round it submits one regional Flower run per region, then one global Flower run where the clients are the gateway SuperNodes.</p><section class="notebook-cell"><p class="cell-label">Code cell 9</p><figure><pre><code>!python scripts/run_hierarchical_rounds.py --global-rounds 1 --regional-rounds 1 --batch-size 8192 --dry-run</code></pre></figure><figure><figcaption>Output</figcaption><pre><code>──────────────────────────────── Global round 1 ────────────────────────────────
-Running: flwr run . region-eu --stream --run-config &#x27;level=&quot;regional&quot; 
+  flat
+</pre></div>
+</figure></section><h2>4. Actuating the Federations</h2>
+<p>`scripts/run_hierarchical_rounds.py` is the control plane for the demo. For each global round it submits one regional Flower run per region, then one global Flower run where the clients are the gateway SuperNodes.</p><section class="notebook-cell"><p class="cell-label">Code cell 9</p><figure><div class="highlight"><pre><span></span>!python scripts/run_hierarchical_rounds.py --global-rounds 1 --regional-rounds 1 --batch-size 8192 --dry-run
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>──────────────────────────────── Global round 1 ────────────────────────────────
+Running: flwr run . region-eu --stream --run-config &#39;level=&quot;regional&quot; 
 region=&quot;region_eu&quot; global-round=1 
 init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; 
 output-checkpoint=&quot;/shared/checkpoints/region_eu/round_1.pt&quot; num-server-rounds=1
 local-epochs=1 batch-size=8192 learning-rate=0.001 input-dim=78 
 region-num-examples=871173 fraction-train=1.0 fraction-evaluate=1.0 
-min-train-nodes=3 min-evaluate-nodes=3 min-available-nodes=3&#x27;
-Running: flwr run . region-na --stream --run-config &#x27;level=&quot;regional&quot; 
+min-train-nodes=3 min-evaluate-nodes=3 min-available-nodes=3&#39;
+Running: flwr run . region-na --stream --run-config &#39;level=&quot;regional&quot; 
 region=&quot;region_na&quot; global-round=1 
 init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; 
 output-checkpoint=&quot;/shared/checkpoints/region_na/round_1.pt&quot; num-server-rounds=1
 local-epochs=1 batch-size=8192 learning-rate=0.001 input-dim=78 
 region-num-examples=1110344 fraction-train=1.0 fraction-evaluate=1.0 
-min-train-nodes=3 min-evaluate-nodes=3 min-available-nodes=3&#x27;
-Running: flwr run . global --stream --run-config &#x27;level=&quot;global&quot; global-round=1 
+min-train-nodes=3 min-evaluate-nodes=3 min-available-nodes=3&#39;
+Running: flwr run . global --stream --run-config &#39;level=&quot;global&quot; global-round=1 
 init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; 
 output-checkpoint=&quot;/shared/checkpoints/global/round_1.pt&quot; num-server-rounds=1 
 local-epochs=1 batch-size=8192 learning-rate=0.0 input-dim=78 
 global-num-examples=1981517 fraction-train=1.0 fraction-evaluate=0.0 
-min-train-nodes=2 min-evaluate-nodes=0 min-available-nodes=2&#x27;
-Latest global checkpoint: shared/checkpoints/global/round_1.pt</code></pre></figure></section><h2>5. Runtime Logs</h2>
-<p>The hospital SuperNode receives train/evaluate messages from its regional SuperLink. The gateway SuperNode receives a train message from the global SuperLink and returns the regional checkpoint as a model update.</p><section class="notebook-cell"><p class="cell-label">Code cell 11</p><figure><pre><code>!docker compose logs --tail=12 hospital-eu-01-supernode region-eu-gateway-supernode region-eu-superlink global-superlink</code></pre></figure><figure><figcaption>Output</figcaption><pre><code>$ docker compose logs --tail=8 hospital-eu-01-supernode
+min-train-nodes=2 min-evaluate-nodes=0 min-available-nodes=2&#39;
+Latest global checkpoint: shared/checkpoints/global/round_1.pt
+</pre></div>
+</figure></section><h2>5. Runtime Logs</h2>
+<p>The hospital SuperNode receives train/evaluate messages from its regional SuperLink. The gateway SuperNode receives a train message from the global SuperLink and returns the regional checkpoint as a model update.</p><section class="notebook-cell"><p class="cell-label">Code cell 11</p><figure><div class="highlight"><pre><span></span>!docker compose logs --tail=12 hospital-eu-01-supernode region-eu-gateway-supernode region-eu-superlink global-superlink
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>$ docker compose logs --tail=8 hospital-eu-01-supernode
 hospital-eu-01-supernode-1  | INFO :      
-hospital-eu-01-supernode-1  | INFO :      [RUN 16007057466994896700]
-hospital-eu-01-supernode-1  | INFO :      Receiving: evaluate message (ID: d008e5725660074e2498c11a9967c3ca2c916f3884bfba41d2d3a1eed6c933db)
+hospital-eu-01-supernode-1  | INFO :      [RUN 8892720515652009613]
+hospital-eu-01-supernode-1  | INFO :      Receiving: evaluate message (ID: 226ada72ab4b62b4ba636a36a933269aa6e86eb78e93ebf4b6f6c11cea03790a)
 hospital-eu-01-supernode-1  | INFO :      Received successfully
 hospital-eu-01-supernode-1  | INFO :      
-hospital-eu-01-supernode-1  | INFO :      [RUN 16007057466994896700]
-hospital-eu-01-supernode-1  | INFO :      Sending: evaluate message (ID: 5ce23e23896549b4fd607e5b8854defae401c4ae42fa1e768694072ae8912053)
+hospital-eu-01-supernode-1  | INFO :      [RUN 8892720515652009613]
+hospital-eu-01-supernode-1  | INFO :      Sending: evaluate message (ID: c3bec7d8c8546c667c761a160828848adab0b974d2afc129faa9a54602a7eff5)
 hospital-eu-01-supernode-1  | INFO :      Sent successfully
 
 $ docker compose logs --tail=8 region-eu-gateway-supernode
 region-eu-gateway-supernode-1  | INFO :      
-region-eu-gateway-supernode-1  | INFO :      [RUN 15388681655111915985]
-region-eu-gateway-supernode-1  | INFO :      Receiving: train message (ID: 393ba1b60dc32fbe859dad440074967fa9e932bad2f41571fadd46af77beb888)
+region-eu-gateway-supernode-1  | INFO :      [RUN 7108604665246021897]
+region-eu-gateway-supernode-1  | INFO :      Receiving: train message (ID: bcd8d96c4f1c22169205a0a50388bd6c01e202efbb4d1e61abe29d6cce9887b8)
 region-eu-gateway-supernode-1  | INFO :      Received successfully
 region-eu-gateway-supernode-1  | INFO :      
-region-eu-gateway-supernode-1  | INFO :      [RUN 15388681655111915985]
-region-eu-gateway-supernode-1  | INFO :      Sending: train message (ID: a870ec9c2e58107f2cb3ecc36b37974126d894f8cd567dca2d0e988e2063270c)
+region-eu-gateway-supernode-1  | INFO :      [RUN 7108604665246021897]
+region-eu-gateway-supernode-1  | INFO :      Sending: train message (ID: a607a37466e7166114a28d7067a7668d7ee9630172360407dc6c7db86c6f810d)
 region-eu-gateway-supernode-1  | INFO :      Sent successfully
 
 $ docker compose logs --tail=8 region-eu-superlink
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=2232677216573752740
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=9570107181024669906
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=2232677216573752740
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=9570107181024669906
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=15498022629305500411
+region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=14122891693576725559
+region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=5493997597484581528
+region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=8185100249412705622
+region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=14122891693576725559
+region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=5493997597484581528
 
 $ docker compose logs --tail=8 global-superlink
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=4984839841683998306
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=741719749005368307
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=4984839841683998306
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=741719749005368307
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=4984839841683998306</code></pre></figure></section><h2>6. Checkpoint Metadata</h2>
-<p>Regional checkpoints carry the regional training-example count used by global weighted FedAvg. The global checkpoint is produced by the global Flower federation.</p><section class="notebook-cell"><p class="cell-label">Code cell 13</p><figure><pre><code>from pathlib import Path
+global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=16240123602962172218
+global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=16240123602962172218
+global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=17412030246258271872
+global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=16240123602962172218
+global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=17412030246258271872
+</pre></div>
+</figure></section><h2>6. Checkpoint Metadata</h2>
+<p>Regional checkpoints carry the regional training-example count used by global weighted FedAvg. The global checkpoint is produced by the global Flower federation.</p><section class="notebook-cell"><p class="cell-label">Code cell 13</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
 import json
 
-for path in sorted(Path(&#x27;shared/checkpoints&#x27;).rglob(&#x27;*.metadata.json&#x27;)):
+for path in sorted(Path(&#39;shared/checkpoints&#39;).rglob(&#39;*.metadata.json&#39;)):
     print(path)
-    print(json.dumps(json.loads(path.read_text()), indent=2, sort_keys=True))</code></pre></figure><figure><figcaption>Output</figcaption><pre><code>shared/checkpoints/global/round_0.metadata.json
+    print(json.dumps(json.loads(path.read_text()), indent=2, sort_keys=True))
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>shared/checkpoints/global/round_0.metadata.json
 {
   &quot;global_round&quot;: 0,
   &quot;initialized&quot;: true,
@@ -190,29 +226,87 @@ shared/checkpoints/global/round_1.metadata.json
 }
 shared/checkpoints/region_eu/round_1.metadata.json
 {
+  &quot;final_evaluate_metrics&quot;: {
+    &quot;eval_acc&quot;: 0.9088386543818298,
+    &quot;eval_auprc&quot;: 0.7388053754330514,
+    &quot;eval_balanced_acc&quot;: 0.9434234895798821,
+    &quot;eval_f1&quot;: 0.2398274571981538,
+    &quot;eval_false_negative_rate&quot;: 0.018916868113710777,
+    &quot;eval_false_positive_rate&quot;: 0.09423615272652494,
+    &quot;eval_precision&quot;: 0.15154821865302495,
+    &quot;eval_recall&quot;: 0.9810831318862892,
+    &quot;eval_roc_auc&quot;: 0.98831318865042
+  },
+  &quot;final_train_metrics&quot;: {
+    &quot;train_loss&quot;: 0.44111061219332715,
+    &quot;val_auprc&quot;: 0.7370027252624184,
+    &quot;val_f1&quot;: 0.2748170929692166,
+    &quot;val_false_negative_rate&quot;: 0.019998102956170653,
+    &quot;val_false_positive_rate&quot;: 0.11000702398757067,
+    &quot;val_roc_auc&quot;: 0.9814099324867481
+  },
   &quot;global_round&quot;: 1,
   &quot;input_dim&quot;: 78,
   &quot;level&quot;: &quot;regional&quot;,
   &quot;num_examples&quot;: 871173,
   &quot;region&quot;: &quot;region_eu&quot;,
   &quot;regional_rounds&quot;: 1,
+  &quot;val_auprc&quot;: 0.7388053754330514,
+  &quot;val_f1&quot;: 0.2398274571981538,
+  &quot;val_false_negative_rate&quot;: 0.018916868113710777,
+  &quot;val_false_positive_rate&quot;: 0.09423615272652494,
+  &quot;val_roc_auc&quot;: 0.98831318865042,
   &quot;weighted_by_key&quot;: &quot;num-examples&quot;
 }
 shared/checkpoints/region_na/round_1.metadata.json
 {
+  &quot;final_evaluate_metrics&quot;: {
+    &quot;eval_acc&quot;: 0.912554847603517,
+    &quot;eval_auprc&quot;: 0.9627416393959645,
+    &quot;eval_balanced_acc&quot;: 0.8769497429934328,
+    &quot;eval_f1&quot;: 0.8434030007296378,
+    &quot;eval_false_negative_rate&quot;: 0.22109670784997787,
+    &quot;eval_false_positive_rate&quot;: 0.025003806163156873,
+    &quot;eval_precision&quot;: 0.9329607803971751,
+    &quot;eval_recall&quot;: 0.7789032921500222,
+    &quot;eval_roc_auc&quot;: 0.9837195759525058
+  },
+  &quot;final_train_metrics&quot;: {
+    &quot;train_loss&quot;: 0.3082205645108318,
+    &quot;val_auprc&quot;: 0.9858760214269302,
+    &quot;val_f1&quot;: 0.9521418633602312,
+    &quot;val_false_negative_rate&quot;: 0.0342369910038108,
+    &quot;val_false_positive_rate&quot;: 0.028597530393889112,
+    &quot;val_roc_auc&quot;: 0.9924786511964521
+  },
   &quot;global_round&quot;: 1,
   &quot;input_dim&quot;: 78,
   &quot;level&quot;: &quot;regional&quot;,
   &quot;num_examples&quot;: 1110344,
   &quot;region&quot;: &quot;region_na&quot;,
   &quot;regional_rounds&quot;: 1,
+  &quot;val_auprc&quot;: 0.9627416393959645,
+  &quot;val_f1&quot;: 0.8434030007296378,
+  &quot;val_false_negative_rate&quot;: 0.22109670784997787,
+  &quot;val_false_positive_rate&quot;: 0.025003806163156873,
+  &quot;val_roc_auc&quot;: 0.9837195759525058,
   &quot;weighted_by_key&quot;: &quot;num-examples&quot;
-}</code></pre></figure></section><h2>7. Evaluation Snapshot</h2>
-<p>These metrics are from the latest rendered local run. They are evidence that the global checkpoint can be loaded and evaluated across the hospital test splits.</p><section class="notebook-cell"><p class="cell-label">Code cell 15</p><figure><pre><code>import pandas as pd
-pd.read_csv(&#x27;reports/metrics_summary_global.csv&#x27;)</code></pre></figure><figure><figcaption>Output</figcaption><pre><code>            run          model_kind          scope  weighted_f1  macro_f1  weighted_roc_auc  weighted_auprc  mean_false_positive_rate  worst_false_negative_rate  num_examples
-hierarchical_fl hierarchical_global global_summary     0.687293  0.815171          0.978011        0.822697                  0.036095                   0.244299        424614</code></pre></figure></section><h2>8. Privacy Boundary Check</h2>
-<p>`shared/` is allowed to contain checkpoints, metrics and preprocessing metadata. It should not contain hospital CSV/parquet rows.</p><section class="notebook-cell"><p class="cell-label">Code cell 17</p><figure><pre><code>from pathlib import Path
-sorted(list(Path(&#x27;shared&#x27;).rglob(&#x27;*.csv&#x27;)) + list(Path(&#x27;shared&#x27;).rglob(&#x27;*.parquet&#x27;)))</code></pre></figure><figure><figcaption>Output</figcaption><pre><code>[]</code></pre></figure></section>
+}
+</pre></div>
+</figure></section><h2>7. Evaluation Snapshot</h2>
+<p>These metrics are from the latest rendered local run. They are evidence that the global checkpoint can be loaded and evaluated across the hospital test splits.</p><section class="notebook-cell"><p class="cell-label">Code cell 15</p><figure><div class="highlight"><pre><span></span>import pandas as pd
+pd.read_csv(&#39;reports/metrics_summary_global.csv&#39;)
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>            run          model_kind          scope  weighted_f1  macro_f1  weighted_roc_auc  weighted_auprc  mean_false_positive_rate  worst_false_negative_rate  num_examples
+hierarchical_fl hierarchical_global global_summary     0.668511  0.812493           0.98411        0.838231                  0.044571                   0.228034        424614
+</pre></div>
+</figure></section><h2>8. Privacy Boundary Check</h2>
+<p>`shared/` is allowed to contain checkpoints, metrics and preprocessing metadata. It should not contain hospital CSV/parquet rows.</p><section class="notebook-cell"><p class="cell-label">Code cell 17</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
+sorted(list(Path(&#39;shared&#39;).rglob(&#39;*.csv&#39;)) + list(Path(&#39;shared&#39;).rglob(&#39;*.parquet&#39;)))
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>[]
+</pre></div>
+</figure></section>
     </main>
   </div>
 </body>

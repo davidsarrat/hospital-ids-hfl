@@ -23,145 +23,307 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="active" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>07 - Orchestration, Docker, and logs</h1><p>How federations are actuated from a script and what to inspect when something fails.</p></section><h2>Profiles Flower</h2><p>Profiles connect names like <code>region-eu</code> or <code>global</code> to each SuperLink endpoint.</p><pre class="command"><code>make flower-config
-flwr config list</code></pre><h2>Run config</h2><p>The orchestrator builds TOML strings for <code>--run-config</code>. Each run receives the level, region, initial checkpoint, output checkpoint, and weights.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L70-L95">scripts/run_hierarchical_rounds.py:70-95</a></figcaption><pre><code>  70  def _run_config(items: dict[str, object]) -&gt; str:
-  71      formatted = []
-  72      for key, value in items.items():
-  73          if isinstance(value, bool):
-  74              rendered = &quot;true&quot; if value else &quot;false&quot;
-  75          elif isinstance(value, int | float):
-  76              rendered = str(value)
-  77          else:
-  78              rendered = json.dumps(str(value))
-  79          formatted.append(f&quot;{key}={rendered}&quot;)
-  80      return &quot; &quot;.join(formatted)
-  81  
-  82  
-  83  def _run_flower(profile: str, run_config: dict[str, object], dry_run: bool) -&gt; None:
-  84      command = [
-  85          &quot;flwr&quot;,
-  86          &quot;run&quot;,
-  87          &quot;.&quot;,
-  88          profile,
-  89          &quot;--stream&quot;,
-  90          &quot;--run-config&quot;,
-  91          _run_config(run_config),
-  92      ]
-  93      console.print(f&quot;[bold]Running:[/bold] {shlex.join(command)}&quot;)
-  94      if not dry_run:
-  95          subprocess.run(command, check=True)</code></pre></figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L98-L166">scripts/run_hierarchical_rounds.py:98-166</a></figcaption><pre><code>  98  def _regional_run_config(
-  99      region: str,
- 100      round_number: int,
- 101      regional_rounds: int,
- 102      input_dim: int,
- 103      partitions_dir: Path,
- 104      shared_dir: Path,
- 105      runtime_shared_dir: Path,
- 106      local_epochs: int,
- 107      batch_size: int,
- 108      learning_rate: float,
- 109      allow_missing_metadata: bool,
- 110  ) -&gt; dict[str, object]:
- 111      min_nodes = len(hospitals_by_region(region))
- 112      return {
- 113          &quot;level&quot;: &quot;regional&quot;,
- 114          &quot;region&quot;: region,
- 115          &quot;global-round&quot;: round_number,
- 116          &quot;init-checkpoint&quot;: global_checkpoint(round_number - 1, runtime_shared_dir),
- 117          &quot;output-checkpoint&quot;: region_checkpoint(region, round_number, runtime_shared_dir),
- 118          &quot;num-server-rounds&quot;: regional_rounds,
- 119          &quot;local-epochs&quot;: local_epochs,
- 120          &quot;batch-size&quot;: batch_size,
- 121          &quot;learning-rate&quot;: learning_rate,
- 122          &quot;input-dim&quot;: input_dim,
- 123          &quot;region-num-examples&quot;: region_train_examples(
- 124              region,
- 125              partitions_dir,
- 126              allow_missing=allow_missing_metadata,
- 127          ),
- 128          &quot;fraction-train&quot;: 1.0,
- 129          &quot;fraction-evaluate&quot;: 1.0,
- 130          &quot;min-train-nodes&quot;: min_nodes,
- 131          &quot;min-evaluate-nodes&quot;: min_nodes,
- 132          &quot;min-available-nodes&quot;: min_nodes,
- 133      }
- 134  
- 135  
- 136  def _global_run_config(
- 137      round_number: int,
- 138      input_dim: int,
- 139      regions: list[str],
- 140      partitions_dir: Path,
- 141      shared_dir: Path,
- 142      runtime_shared_dir: Path,
- 143      batch_size: int,
- 144      allow_missing_metadata: bool,
- 145  ) -&gt; dict[str, object]:
- 146      return {
- 147          &quot;level&quot;: &quot;global&quot;,
- 148          &quot;global-round&quot;: round_number,
- 149          &quot;init-checkpoint&quot;: global_checkpoint(round_number - 1, runtime_shared_dir),
- 150          &quot;output-checkpoint&quot;: global_checkpoint(round_number, runtime_shared_dir),
- 151          &quot;num-server-rounds&quot;: 1,
- 152          &quot;local-epochs&quot;: 1,
- 153          &quot;batch-size&quot;: batch_size,
- 154          &quot;learning-rate&quot;: 0.0,
- 155          &quot;input-dim&quot;: input_dim,
- 156          &quot;global-num-examples&quot;: global_train_examples(
- 157              regions,
- 158              partitions_dir,
- 159              allow_missing=allow_missing_metadata,
- 160          ),
- 161          &quot;fraction-train&quot;: 1.0,
- 162          &quot;fraction-evaluate&quot;: 0.0,
- 163          &quot;min-train-nodes&quot;: len(regions),
- 164          &quot;min-evaluate-nodes&quot;: 0,
- 165          &quot;min-available-nodes&quot;: len(regions),
- 166      }</code></pre></figure><h2>Hierarchical loop</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L208-L245">scripts/run_hierarchical_rounds.py:208-245</a></figcaption><pre><code> 208      for round_number in range(1, global_rounds + 1):
- 209          console.rule(f&quot;Global round {round_number}&quot;)
- 210          for region in selected_regions:
- 211              profile = region.replace(&quot;_&quot;, &quot;-&quot;)
- 212              _run_flower(
- 213                  profile=profile,
- 214                  run_config=_regional_run_config(
- 215                      region=region,
- 216                      round_number=round_number,
- 217                      regional_rounds=regional_rounds,
- 218                      input_dim=input_dim,
- 219                      partitions_dir=partitions_dir,
- 220                      shared_dir=shared_dir,
- 221                      runtime_shared_dir=runtime_shared_dir,
- 222                      local_epochs=local_epochs,
- 223                      batch_size=batch_size,
- 224                      learning_rate=learning_rate,
- 225                      allow_missing_metadata=dry_run,
- 226                  ),
- 227                  dry_run=dry_run,
- 228              )
- 229  
- 230          _run_flower(
- 231              profile=&quot;global&quot;,
- 232              run_config=_global_run_config(
- 233                  round_number=round_number,
- 234                  input_dim=input_dim,
- 235                  regions=selected_regions,
- 236                  partitions_dir=partitions_dir,
- 237                  shared_dir=shared_dir,
- 238                  runtime_shared_dir=runtime_shared_dir,
- 239                  batch_size=batch_size,
- 240                  allow_missing_metadata=dry_run,
- 241              ),
- 242              dry_run=dry_run,
- 243          )
- 244  
- 245      console.print(f&quot;[green]Latest global checkpoint: {global_checkpoint(global_rounds, shared_dir)}[/green]&quot;)</code></pre></figure><h2>Diagnostic commands</h2><pre class="command"><code>docker compose ps
-docker compose logs --tail=80 region-eu-superlink
-docker compose logs --tail=80 hospital-eu-01-supernode
-docker compose logs --tail=80 region-eu-gateway-supernode
-docker compose logs --tail=80 global-superlink</code></pre><div class="pager"><a href="06-gateway-global.html">Previous: 06 - Regional gateway and global aggregation</a><span></span><a href="08-evaluation-privacy.html">Next: 08 - Evaluation, privacy, and next steps</a></div>
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>07 - Orchestration, Docker, and logs</h1><p>How federations are actuated from a script and what to inspect when something fails.</p></section><h2>Profiles Flower</h2><p>Profiles connect names like <code>region-eu</code> or <code>global</code> to each SuperLink endpoint.</p><figure class="command"><div class="highlight"><pre><span></span>make<span class="w"> </span>flower-config
+flwr<span class="w"> </span>config<span class="w"> </span>list
+</pre></div>
+</figure><h2>Run config</h2><p>The orchestrator builds TOML strings for <code>--run-config</code>. Each run receives the level, region, initial checkpoint, output checkpoint, and weights.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L70-L95">scripts/run_hierarchical_rounds.py:70-95</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span>
+<span class="normal">93</span>
+<span class="normal">94</span>
+<span class="normal">95</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_run_config</span><span class="p">(</span><span class="n">items</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">formatted</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">items</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="n">rendered</span> <span class="o">=</span> <span class="s2">&quot;true&quot;</span> <span class="k">if</span> <span class="n">value</span> <span class="k">else</span> <span class="s2">&quot;false&quot;</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span><span class="p">):</span>
+            <span class="n">rendered</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">rendered</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+        <span class="n">formatted</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">rendered</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">formatted</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_run_flower</span><span class="p">(</span><span class="n">profile</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">run_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">],</span> <span class="n">dry_run</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">command</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;flwr&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;run&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.&quot;</span><span class="p">,</span>
+        <span class="n">profile</span><span class="p">,</span>
+        <span class="s2">&quot;--stream&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;--run-config&quot;</span><span class="p">,</span>
+        <span class="n">_run_config</span><span class="p">(</span><span class="n">run_config</span><span class="p">),</span>
+    <span class="p">]</span>
+    <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[bold]Running:[/bold] </span><span class="si">{</span><span class="n">shlex</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">command</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">dry_run</span><span class="p">:</span>
+        <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L98-L166">scripts/run_hierarchical_rounds.py:98-166</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span>
+<span class="normal">165</span>
+<span class="normal">166</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_regional_run_config</span><span class="p">(</span>
+    <span class="n">region</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">round_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">regional_rounds</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">input_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">partitions_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">shared_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">runtime_shared_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">local_epochs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">learning_rate</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">allow_missing_metadata</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]:</span>
+    <span class="n">min_nodes</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hospitals_by_region</span><span class="p">(</span><span class="n">region</span><span class="p">))</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;level&quot;</span><span class="p">:</span> <span class="s2">&quot;regional&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;region&quot;</span><span class="p">:</span> <span class="n">region</span><span class="p">,</span>
+        <span class="s2">&quot;global-round&quot;</span><span class="p">:</span> <span class="n">round_number</span><span class="p">,</span>
+        <span class="s2">&quot;init-checkpoint&quot;</span><span class="p">:</span> <span class="n">global_checkpoint</span><span class="p">(</span><span class="n">round_number</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">runtime_shared_dir</span><span class="p">),</span>
+        <span class="s2">&quot;output-checkpoint&quot;</span><span class="p">:</span> <span class="n">region_checkpoint</span><span class="p">(</span><span class="n">region</span><span class="p">,</span> <span class="n">round_number</span><span class="p">,</span> <span class="n">runtime_shared_dir</span><span class="p">),</span>
+        <span class="s2">&quot;num-server-rounds&quot;</span><span class="p">:</span> <span class="n">regional_rounds</span><span class="p">,</span>
+        <span class="s2">&quot;local-epochs&quot;</span><span class="p">:</span> <span class="n">local_epochs</span><span class="p">,</span>
+        <span class="s2">&quot;batch-size&quot;</span><span class="p">:</span> <span class="n">batch_size</span><span class="p">,</span>
+        <span class="s2">&quot;learning-rate&quot;</span><span class="p">:</span> <span class="n">learning_rate</span><span class="p">,</span>
+        <span class="s2">&quot;input-dim&quot;</span><span class="p">:</span> <span class="n">input_dim</span><span class="p">,</span>
+        <span class="s2">&quot;region-num-examples&quot;</span><span class="p">:</span> <span class="n">region_train_examples</span><span class="p">(</span>
+            <span class="n">region</span><span class="p">,</span>
+            <span class="n">partitions_dir</span><span class="p">,</span>
+            <span class="n">allow_missing</span><span class="o">=</span><span class="n">allow_missing_metadata</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="s2">&quot;fraction-train&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="s2">&quot;fraction-evaluate&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="s2">&quot;min-train-nodes&quot;</span><span class="p">:</span> <span class="n">min_nodes</span><span class="p">,</span>
+        <span class="s2">&quot;min-evaluate-nodes&quot;</span><span class="p">:</span> <span class="n">min_nodes</span><span class="p">,</span>
+        <span class="s2">&quot;min-available-nodes&quot;</span><span class="p">:</span> <span class="n">min_nodes</span><span class="p">,</span>
+    <span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_global_run_config</span><span class="p">(</span>
+    <span class="n">round_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">input_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">regions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">partitions_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">shared_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">runtime_shared_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">allow_missing_metadata</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;level&quot;</span><span class="p">:</span> <span class="s2">&quot;global&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;global-round&quot;</span><span class="p">:</span> <span class="n">round_number</span><span class="p">,</span>
+        <span class="s2">&quot;init-checkpoint&quot;</span><span class="p">:</span> <span class="n">global_checkpoint</span><span class="p">(</span><span class="n">round_number</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">runtime_shared_dir</span><span class="p">),</span>
+        <span class="s2">&quot;output-checkpoint&quot;</span><span class="p">:</span> <span class="n">global_checkpoint</span><span class="p">(</span><span class="n">round_number</span><span class="p">,</span> <span class="n">runtime_shared_dir</span><span class="p">),</span>
+        <span class="s2">&quot;num-server-rounds&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">&quot;local-epochs&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">&quot;batch-size&quot;</span><span class="p">:</span> <span class="n">batch_size</span><span class="p">,</span>
+        <span class="s2">&quot;learning-rate&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="s2">&quot;input-dim&quot;</span><span class="p">:</span> <span class="n">input_dim</span><span class="p">,</span>
+        <span class="s2">&quot;global-num-examples&quot;</span><span class="p">:</span> <span class="n">global_train_examples</span><span class="p">(</span>
+            <span class="n">regions</span><span class="p">,</span>
+            <span class="n">partitions_dir</span><span class="p">,</span>
+            <span class="n">allow_missing</span><span class="o">=</span><span class="n">allow_missing_metadata</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="s2">&quot;fraction-train&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="s2">&quot;fraction-evaluate&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="s2">&quot;min-train-nodes&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">regions</span><span class="p">),</span>
+        <span class="s2">&quot;min-evaluate-nodes&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;min-available-nodes&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">regions</span><span class="p">),</span>
+    <span class="p">}</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L70-L80">Lines 70-80</a> serialize Python values into Flower's run-config syntax.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L83-L95">Lines 83-95</a> build and optionally execute the <code>flwr run . &lt;profile&gt; --stream --run-config ...</code> command.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L98-L133">Lines 98-133</a> define the regional run config: level, region, previous global checkpoint, output regional checkpoint, and regional sample count.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L136-L166">Lines 136-166</a> define the global run config: previous global checkpoint, output global checkpoint, and total regional sample count.</li></ul></div><h2>Hierarchical loop</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L208-L245">scripts/run_hierarchical_rounds.py:208-245</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">208</span>
+<span class="normal">209</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span></pre></div></td><td class="code"><div><pre><span></span>    <span class="k">for</span> <span class="n">round_number</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">global_rounds</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">console</span><span class="o">.</span><span class="n">rule</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Global round </span><span class="si">{</span><span class="n">round_number</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">region</span> <span class="ow">in</span> <span class="n">selected_regions</span><span class="p">:</span>
+            <span class="n">profile</span> <span class="o">=</span> <span class="n">region</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">)</span>
+            <span class="n">_run_flower</span><span class="p">(</span>
+                <span class="n">profile</span><span class="o">=</span><span class="n">profile</span><span class="p">,</span>
+                <span class="n">run_config</span><span class="o">=</span><span class="n">_regional_run_config</span><span class="p">(</span>
+                    <span class="n">region</span><span class="o">=</span><span class="n">region</span><span class="p">,</span>
+                    <span class="n">round_number</span><span class="o">=</span><span class="n">round_number</span><span class="p">,</span>
+                    <span class="n">regional_rounds</span><span class="o">=</span><span class="n">regional_rounds</span><span class="p">,</span>
+                    <span class="n">input_dim</span><span class="o">=</span><span class="n">input_dim</span><span class="p">,</span>
+                    <span class="n">partitions_dir</span><span class="o">=</span><span class="n">partitions_dir</span><span class="p">,</span>
+                    <span class="n">shared_dir</span><span class="o">=</span><span class="n">shared_dir</span><span class="p">,</span>
+                    <span class="n">runtime_shared_dir</span><span class="o">=</span><span class="n">runtime_shared_dir</span><span class="p">,</span>
+                    <span class="n">local_epochs</span><span class="o">=</span><span class="n">local_epochs</span><span class="p">,</span>
+                    <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+                    <span class="n">learning_rate</span><span class="o">=</span><span class="n">learning_rate</span><span class="p">,</span>
+                    <span class="n">allow_missing_metadata</span><span class="o">=</span><span class="n">dry_run</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">dry_run</span><span class="o">=</span><span class="n">dry_run</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">_run_flower</span><span class="p">(</span>
+            <span class="n">profile</span><span class="o">=</span><span class="s2">&quot;global&quot;</span><span class="p">,</span>
+            <span class="n">run_config</span><span class="o">=</span><span class="n">_global_run_config</span><span class="p">(</span>
+                <span class="n">round_number</span><span class="o">=</span><span class="n">round_number</span><span class="p">,</span>
+                <span class="n">input_dim</span><span class="o">=</span><span class="n">input_dim</span><span class="p">,</span>
+                <span class="n">regions</span><span class="o">=</span><span class="n">selected_regions</span><span class="p">,</span>
+                <span class="n">partitions_dir</span><span class="o">=</span><span class="n">partitions_dir</span><span class="p">,</span>
+                <span class="n">shared_dir</span><span class="o">=</span><span class="n">shared_dir</span><span class="p">,</span>
+                <span class="n">runtime_shared_dir</span><span class="o">=</span><span class="n">runtime_shared_dir</span><span class="p">,</span>
+                <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+                <span class="n">allow_missing_metadata</span><span class="o">=</span><span class="n">dry_run</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">dry_run</span><span class="o">=</span><span class="n">dry_run</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[green]Latest global checkpoint: </span><span class="si">{</span><span class="n">global_checkpoint</span><span class="p">(</span><span class="n">global_rounds</span><span class="p">,</span><span class="w"> </span><span class="n">shared_dir</span><span class="p">)</span><span class="si">}</span><span class="s2">[/green]&quot;</span><span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L208-L228">Lines 208-228</a> run each regional federation first. These runs create the regional checkpoints consumed by the gateways.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L230-L243">Lines 230-243</a> run the global federation after all regional checkpoints for that round exist.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/run_hierarchical_rounds.py#L245">Line 245</a> prints the latest global checkpoint path, which is what evaluation should load next.</li><li>The order is intentional: regional training happens before global aggregation in every outer round.</li></ul></div><h2>Diagnostic commands</h2><figure class="command"><div class="highlight"><pre><span></span>docker<span class="w"> </span>compose<span class="w"> </span>ps
+docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>--tail<span class="o">=</span><span class="m">80</span><span class="w"> </span>region-eu-superlink
+docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>--tail<span class="o">=</span><span class="m">80</span><span class="w"> </span>hospital-eu-01-supernode
+docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>--tail<span class="o">=</span><span class="m">80</span><span class="w"> </span>region-eu-gateway-supernode
+docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>--tail<span class="o">=</span><span class="m">80</span><span class="w"> </span>global-superlink
+</pre></div>
+</figure><h2>What progress looks like</h2><p>When <code>make demo</code> runs, the orchestrator prints each <code>flwr run</code> command before executing it. Flower then streams server/client progress: sampled nodes, train/evaluate messages, completed rounds, checkpoint writes, evaluation reports, and finally a compact metrics CSV.</p><figure><figcaption>Captured make demo transcript excerpt</figcaption><div class="highlight"><pre><span></span>──────────────────────────────── Global round 1 ────────────────────────────────
+Running: flwr run . region-eu --stream --run-config &#39;level=&quot;regional&quot; 
+[92mINFO [0m:      aggregate_train: Received 3 results and 0 failures
+[92mINFO [0m:      	└──&gt; Aggregated MetricRecord: {&#39;train_loss&#39;: 0.44111061219332715, &#39;val_f1&#39;: 0.2748170929692166, &#39;val_roc_auc&#39;: 0.9814099324867481, &#39;val_auprc&#39;: 0.7370027252624184, &#39;val_false_positive_rate&#39;: 0.11000702398757067, &#39;val_false_negative_rate&#39;: 0.019998102956170653}
+[92mINFO [0m:      aggregate_evaluate: Received 3 results and 0 failures
+[92mINFO [0m:      	{ 1: { &#39;train_loss&#39;: &#39;4.4111e-01&#39;,
+Running: flwr run . region-na --stream --run-config &#39;level=&quot;regional&quot; 
+[92mINFO [0m:      aggregate_train: Received 3 results and 0 failures
+[92mINFO [0m:      	└──&gt; Aggregated MetricRecord: {&#39;train_loss&#39;: 0.3082205645108318, &#39;val_f1&#39;: 0.9521418633602312, &#39;val_roc_auc&#39;: 0.9924786511964521, &#39;val_auprc&#39;: 0.9858760214269302, &#39;val_false_positive_rate&#39;: 0.028597530393889112, &#39;val_false_negative_rate&#39;: 0.0342369910038108}
+[92mINFO [0m:      aggregate_evaluate: Received 3 results and 0 failures
+[92mINFO [0m:      	{ 1: { &#39;train_loss&#39;: &#39;3.0822e-01&#39;,
+Running: flwr run . global --stream --run-config &#39;level=&quot;global&quot; global-round=1 
+[92mINFO [0m:      aggregate_train: Received 2 results and 0 failures
+Latest global checkpoint: shared/checkpoints/global/round_1.pt
+Wrote hospital metrics to reports/metrics_summary.csv
+Wrote global summary to reports/metrics_summary_global.csv
+Wrote predictions to reports/predictions_hospital_eu_01.csv
+Wrote notebooks/04_flower_runtime_orchestration.ipynb
+run,model_kind,scope,weighted_f1,macro_f1,weighted_roc_auc,weighted_auprc,mean_false_positive_rate,worst_false_negative_rate,num_examples
+hierarchical_fl,hierarchical_global,global_summary,0.6685111358467536,0.8124927972337909,0.9841100537911857,0.8382307539491916,0.04457125977490039,0.22803380641046087,424614
+Wrote GitHub Pages site to docs
+</pre></div>
+</figure><aside class="lab-card"><strong>Hands-on lab: hierarchical runtime</strong><p>Open this after reading the orchestration code. It shows service state, exact <code>flwr run</code> commands, logs, checkpoint metadata, and the evaluation summary.</p><a href="../renders/04_flower_runtime_orchestration.html">Open lab render</a></aside><div class="pager"><a href="06-gateway-global.html">Previous: 06 - Regional gateway and global aggregation</a><span></span><a href="08-evaluation-privacy.html">Next: 08 - Evaluation, privacy, and next steps</a></div>
     </main>
   </div>
 </body>

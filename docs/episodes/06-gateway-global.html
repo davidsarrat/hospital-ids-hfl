@@ -23,91 +23,175 @@
 <a class="active" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>06 - Regional gateway and global aggregation</h1><p>The key piece: the global layer sees regions as clients, not hospitals.</p></section><h2>ClientApp in gateway mode</h2><p>The gateway does not train. It loads the already aggregated regional checkpoint and its metadata. It returns that model to the global SuperLink as a client update.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L87-L130">hfl_cicids/client_app.py:87-130</a></figcaption><pre><code>  87  def _train_region_gateway(msg: Message, context: Context) -&gt; Message:
-  88      &quot;&quot;&quot;Return an already aggregated regional checkpoint to the global hub.
-  89  
-  90      The region gateway is a parent-layer client. It does not train on rows and
-  91      should only mount shared checkpoints, never hospital partition directories.
-  92      &quot;&quot;&quot;
-  93  
-  94      region = str(context.node_config[&quot;region&quot;])
-  95      checkpoint_root = Path(str(context.node_config[&quot;checkpoint-root&quot;]))
-  96      config = _msg_config(msg)
-  97      global_round = int(config.get(&quot;global-round&quot;, context.run_config.get(&quot;global-round&quot;, 1)))
-  98  
-  99      ckpt = checkpoint_root / region / f&quot;round_{global_round}.pt&quot;
- 100      meta = ckpt.with_suffix(&quot;.metadata.json&quot;)
- 101  
- 102      if not ckpt.exists():
- 103          raise FileNotFoundError(f&quot;Regional checkpoint not found: {ckpt}&quot;)
- 104  
- 105      if not meta.exists():
- 106          raise FileNotFoundError(f&quot;Regional checkpoint metadata not found: {meta}&quot;)
- 107  
- 108      metadata = json.loads(meta.read_text())
- 109      input_dim = int(metadata[&quot;input_dim&quot;])
- 110      num_examples = int(metadata[&quot;num_examples&quot;])
- 111  
- 112      model = TabularIDSNet(input_dim=input_dim)
- 113      model.load_state_dict(torch.load(ckpt, map_location=&quot;cpu&quot;, weights_only=True))
- 114  
- 115      metrics = {
- 116          &quot;num-examples&quot;: num_examples,
- 117          &quot;regional_val_f1&quot;: float(metadata.get(&quot;val_f1&quot;, 0.0)),
- 118          &quot;regional_val_roc_auc&quot;: float(metadata.get(&quot;val_roc_auc&quot;, 0.0)),
- 119          &quot;regional_val_auprc&quot;: float(metadata.get(&quot;val_auprc&quot;, 0.0)),
- 120      }
- 121  
- 122      return Message(
- 123          content=RecordDict(
- 124              {
- 125                  &quot;arrays&quot;: ArrayRecord(model.state_dict()),
- 126                  &quot;metrics&quot;: MetricRecord(metrics),
- 127              }
- 128          ),
- 129          reply_to=msg,
- 130      )</code></pre></figure><h2>ServerApp global</h2><p>The global layer uses FedAvg again, but now its clients are gateways. Each gateway is weighted by the total number of training examples in its region.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L88-L124">hfl_cicids/server_app.py:88-124</a></figcaption><pre><code>  88  def _run_global_serverapp(grid: Grid, context: Context) -&gt; None:
-  89      &quot;&quot;&quot;Aggregate regional gateway updates at the global hub.&quot;&quot;&quot;
-  90  
-  91      min_train_nodes = int(context.run_config[&quot;min-train-nodes&quot;])
-  92  
-  93      strategy = FedAvg(
-  94          fraction_train=1.0,
-  95          fraction_evaluate=0.0,
-  96          min_train_nodes=min_train_nodes,
-  97          min_evaluate_nodes=0,
-  98          min_available_nodes=min_train_nodes,
-  99          weighted_by_key=&quot;num-examples&quot;,
- 100      )
- 101  
- 102      result = strategy.start(
- 103          grid=grid,
- 104          initial_arrays=_initial_arrays(context),
- 105          num_rounds=1,
- 106          train_config=ConfigRecord(
- 107              {
- 108                  &quot;global-round&quot;: int(context.run_config[&quot;global-round&quot;]),
- 109              }
- 110          ),
- 111      )
- 112  
- 113      output_checkpoint = Path(str(context.run_config[&quot;output-checkpoint&quot;]))
- 114      save_arrayrecord_checkpoint(
- 115          result.arrays,
- 116          output_checkpoint,
- 117          extra_metadata={
- 118              &quot;level&quot;: &quot;global&quot;,
- 119              &quot;global_round&quot;: int(context.run_config[&quot;global-round&quot;]),
- 120              &quot;input_dim&quot;: int(context.run_config[&quot;input-dim&quot;]),
- 121              &quot;num_examples&quot;: int(context.run_config.get(&quot;global-num-examples&quot;, 1)),
- 122              &quot;weighted_by_key&quot;: &quot;num-examples&quot;,
- 123          },
- 124      )</code></pre></figure><h2>Formula</h2><figure><figcaption>Global FedAvg weighted by region</figcaption><pre><code>
-N_global = sum_r N_r
-theta_global = sum_r (N_r / N_global) * theta_r</code></pre></figure><aside class="callout"><strong>Why this matters</strong><p>This is the difference between a real hierarchical demo and a Python script that averages files. The global checkpoint comes from a Flower federation with a global SuperLink.</p></aside><div class="pager"><a href="05-serverapp-fedavg.html">Previous: 05 - Regional ServerApp and FedAvg</a><span></span><a href="07-orchestration.html">Next: 07 - Orchestration, Docker, and logs</a></div>
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>06 - Regional gateway and global aggregation</h1><p>The key piece: the global layer sees regions as clients, not hospitals.</p></section><h2>ClientApp in gateway mode</h2><p>The gateway does not train. It loads the already aggregated regional checkpoint and its metadata. It returns that model to the global SuperLink as a client update.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L87-L130">hfl_cicids/client_app.py:87-130</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_train_region_gateway</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Message</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an already aggregated regional checkpoint to the global hub.</span>
+
+<span class="sd">    The region gateway is a parent-layer client. It does not train on rows and</span>
+<span class="sd">    should only mount shared checkpoints, never hospital partition directories.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">region</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">node_config</span><span class="p">[</span><span class="s2">&quot;region&quot;</span><span class="p">])</span>
+    <span class="n">checkpoint_root</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">node_config</span><span class="p">[</span><span class="s2">&quot;checkpoint-root&quot;</span><span class="p">]))</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">_msg_config</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+    <span class="n">global_round</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;global-round&quot;</span><span class="p">,</span> <span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;global-round&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)))</span>
+
+    <span class="n">ckpt</span> <span class="o">=</span> <span class="n">checkpoint_root</span> <span class="o">/</span> <span class="n">region</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;round_</span><span class="si">{</span><span class="n">global_round</span><span class="si">}</span><span class="s2">.pt&quot;</span>
+    <span class="n">meta</span> <span class="o">=</span> <span class="n">ckpt</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;.metadata.json&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ckpt</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Regional checkpoint not found: </span><span class="si">{</span><span class="n">ckpt</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">meta</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Regional checkpoint metadata not found: </span><span class="si">{</span><span class="n">meta</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">metadata</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+    <span class="n">input_dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;input_dim&quot;</span><span class="p">])</span>
+    <span class="n">num_examples</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;num_examples&quot;</span><span class="p">])</span>
+
+    <span class="n">model</span> <span class="o">=</span> <span class="n">TabularIDSNet</span><span class="p">(</span><span class="n">input_dim</span><span class="o">=</span><span class="n">input_dim</span><span class="p">)</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">ckpt</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+
+    <span class="n">metrics</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;num-examples&quot;</span><span class="p">:</span> <span class="n">num_examples</span><span class="p">,</span>
+        <span class="s2">&quot;regional_val_f1&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;val_f1&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+        <span class="s2">&quot;regional_val_roc_auc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;val_roc_auc&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+        <span class="s2">&quot;regional_val_auprc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;val_auprc&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="n">Message</span><span class="p">(</span>
+        <span class="n">content</span><span class="o">=</span><span class="n">RecordDict</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;arrays&quot;</span><span class="p">:</span> <span class="n">ArrayRecord</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()),</span>
+                <span class="s2">&quot;metrics&quot;</span><span class="p">:</span> <span class="n">MetricRecord</span><span class="p">(</span><span class="n">metrics</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">),</span>
+        <span class="n">reply_to</span><span class="o">=</span><span class="n">msg</span><span class="p">,</span>
+    <span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L87-L92">Lines 87-92</a> state the key design contract: the gateway does not train on rows.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L94-L100">Lines 94-100</a> compute the expected regional checkpoint path from <code>region</code> and <code>global-round</code>.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L102-L110">Lines 102-110</a> fail if either the checkpoint or metadata is missing. This prevents the global layer from silently aggregating stale data.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L112-L119">Lines 112-119</a> load the regional model and expose <code>num-examples</code> plus regional validation metrics.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L122-L130">Lines 122-130</a> return the regional model as a normal Flower client update.</li></ul></div><h2>ServerApp global</h2><p>The global layer uses FedAvg again, but now its clients are gateways. Each gateway is weighted by the total number of training examples in its region.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L119-L155">hfl_cicids/server_app.py:119-155</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_run_global_serverapp</span><span class="p">(</span><span class="n">grid</span><span class="p">:</span> <span class="n">Grid</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Aggregate regional gateway updates at the global hub.&quot;&quot;&quot;</span>
+
+    <span class="n">min_train_nodes</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;min-train-nodes&quot;</span><span class="p">])</span>
+
+    <span class="n">strategy</span> <span class="o">=</span> <span class="n">FedAvg</span><span class="p">(</span>
+        <span class="n">fraction_train</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">fraction_evaluate</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">min_train_nodes</span><span class="o">=</span><span class="n">min_train_nodes</span><span class="p">,</span>
+        <span class="n">min_evaluate_nodes</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">min_available_nodes</span><span class="o">=</span><span class="n">min_train_nodes</span><span class="p">,</span>
+        <span class="n">weighted_by_key</span><span class="o">=</span><span class="s2">&quot;num-examples&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">strategy</span><span class="o">.</span><span class="n">start</span><span class="p">(</span>
+        <span class="n">grid</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span>
+        <span class="n">initial_arrays</span><span class="o">=</span><span class="n">_initial_arrays</span><span class="p">(</span><span class="n">context</span><span class="p">),</span>
+        <span class="n">num_rounds</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">train_config</span><span class="o">=</span><span class="n">ConfigRecord</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;global-round&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;global-round&quot;</span><span class="p">]),</span>
+            <span class="p">}</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="n">output_checkpoint</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;output-checkpoint&quot;</span><span class="p">]))</span>
+    <span class="n">save_arrayrecord_checkpoint</span><span class="p">(</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">arrays</span><span class="p">,</span>
+        <span class="n">output_checkpoint</span><span class="p">,</span>
+        <span class="n">extra_metadata</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">&quot;level&quot;</span><span class="p">:</span> <span class="s2">&quot;global&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;global_round&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;global-round&quot;</span><span class="p">]),</span>
+            <span class="s2">&quot;input_dim&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;input-dim&quot;</span><span class="p">]),</span>
+            <span class="s2">&quot;num_examples&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;global-num-examples&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)),</span>
+            <span class="s2">&quot;weighted_by_key&quot;</span><span class="p">:</span> <span class="s2">&quot;num-examples&quot;</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L124-L131">Lines 124-131</a> configure FedAvg at the global level. Here the clients are gateway SuperNodes, not hospitals.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L133-L142">Lines 133-142</a> run exactly one global aggregation round for each outer loop iteration.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L144-L155">Lines 144-155</a> save the global checkpoint and metadata after the gateway updates are aggregated.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L152">Line 152</a> records the global training-example total, which should match the sum of regional totals.</li></ul></div><h2>Formula</h2><figure><figcaption>Global FedAvg weighted by region</figcaption><div class="highlight"><pre><span></span>N_global = sum_r N_r
+theta_global = sum_r (N_r / N_global) * theta_r
+</pre></div>
+</figure><aside class="callout"><strong>Why this matters</strong><p>This is the difference between a real hierarchical demo and a Python script that averages files. The global checkpoint comes from a Flower federation with a global SuperLink.</p></aside><div class="pager"><a href="05-serverapp-fedavg.html">Previous: 05 - Regional ServerApp and FedAvg</a><span></span><a href="07-orchestration.html">Next: 07 - Orchestration, Docker, and logs</a></div>
     </main>
   </div>
 </body>

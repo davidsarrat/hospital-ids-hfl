@@ -30,4 +30,6 @@ shared/preprocessing/*
 !shared/preprocessing/.gitkeep
 
 reports/*.metadata.json
+reports/predictions_*.csv
 reports/metrics_summary_global.csv
+reports/demo_transcript.txt

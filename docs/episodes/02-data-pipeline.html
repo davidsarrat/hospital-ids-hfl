@@ -23,167 +23,327 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>02 - Reproducible data pipeline</h1><p>How CIC-IDS2017 CSVs become six simulated hospital partitions with a non-IID split.</p></section><h2>Cleaning</h2><p>The cleaning step concatenates the CSVs, normalizes column names, finds the Label column, maps BENIGN to 0 and every attack to 1, drops metadata/leakage columns, and keeps numeric features.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/prepare_cicids.py#L54-L122">scripts/prepare_cicids.py:54-122</a></figcaption><pre><code>  54  def clean_cicids_csvs(
-  55      raw_dir: Path,
-  56      max_missing_fraction: float = 0.40,
-  57      max_rows: int | None = None,
-  58      global_impute: bool = False,
-  59  ) -&gt; tuple[pd.DataFrame, dict]:
-  60      csvs = sorted(raw_dir.rglob(&quot;*.csv&quot;))
-  61      if not csvs:
-  62          raise FileNotFoundError(f&quot;No CIC-IDS2017 CSV files found under {raw_dir}&quot;)
-  63  
-  64      frames = []
-  65      for csv_path in csvs:
-  66          console.print(f&quot;Reading {csv_path}&quot;)
-  67          frame = _read_csv(csv_path)
-  68          frame.columns = _unique_columns([str(c) for c in frame.columns])
-  69          frames.append(frame)
-  70  
-  71      df = pd.concat(frames, ignore_index=True)
-  72      if max_rows is not None and max_rows &gt; 0 and len(df) &gt; max_rows:
-  73          df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
-  74  
-  75      label_cols = [c for c in df.columns if c.strip().lower() == &quot;label&quot;]
-  76      if not label_cols:
-  77          raise ValueError(&quot;Could not find a CIC-IDS2017 label column&quot;)
-  78      label_col = label_cols[0]
-  79  
-  80      raw_labels = df[label_col].astype(str).str.strip()
-  81      attack_type = raw_labels.str.upper().replace({&quot;&quot;: &quot;UNKNOWN&quot;})
-  82      labels = (attack_type != &quot;BENIGN&quot;).astype(&quot;int64&quot;)
-  83  
-  84      drop_cols = {label_col}
-  85      for col in df.columns:
-  86          base_col = col.strip().lower().split(&quot;__&quot;, maxsplit=1)[0]
-  87          if base_col in LEAKAGE_COLUMNS:
-  88              drop_cols.add(col)
-  89  
-  90      features = df.drop(columns=list(drop_cols), errors=&quot;ignore&quot;)
-  91      numeric = features.apply(pd.to_numeric, errors=&quot;coerce&quot;)
-  92      numeric = numeric.replace([np.inf, -np.inf], np.nan)
-  93  
-  94      missing_fraction = numeric.isna().mean()
-  95      kept_cols = missing_fraction[missing_fraction &lt;= max_missing_fraction].index.tolist()
-  96      dropped_cols = sorted(set(numeric.columns) - set(kept_cols))
-  97      numeric = numeric[kept_cols]
-  98  
-  99      if global_impute:
- 100          medians = numeric.median(numeric_only=True).fillna(0.0)
- 101          numeric = numeric.fillna(medians)
- 102  
- 103      cleaned = numeric.copy()
- 104      cleaned[&quot;label&quot;] = labels
- 105      cleaned[&quot;attack_type&quot;] = attack_type
- 106  
- 107      metadata = {
- 108          &quot;source_files&quot;: [str(path) for path in csvs],
- 109          &quot;rows&quot;: int(len(cleaned)),
- 110          &quot;feature_columns&quot;: kept_cols,
- 111          &quot;num_features&quot;: int(len(kept_cols)),
- 112          &quot;label_mapping&quot;: {&quot;BENIGN&quot;: 0, &quot;ATTACK&quot;: 1},
- 113          &quot;attack_distribution&quot;: attack_type.value_counts().to_dict(),
- 114          &quot;dropped_columns&quot;: dropped_cols,
- 115          &quot;max_missing_fraction&quot;: max_missing_fraction,
- 116          &quot;global_impute&quot;: global_impute,
- 117          &quot;note&quot;: (
- 118              &quot;Final train-only imputation and standardization are performed by &quot;
- 119              &quot;scripts/make_partitions.py.&quot;
- 120          ),
- 121      }
- 122      return cleaned, metadata</code></pre></figure><h2>Non-IID split with seed 123</h2><p>Partitioning assigns attack groups to hospitals with biased weights. This makes each hospital see a different distribution, which is the interesting case for FL.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L31-L72">Attack grouping and hospital preferences</a></figcaption><pre><code>  31  def attack_group(label: str) -&gt; str:
-  32      value = str(label).strip().upper()
-  33      if value == &quot;BENIGN&quot;:
-  34          return &quot;BENIGN&quot;
-  35      if &quot;DDOS&quot; in value:
-  36          return &quot;DDOS&quot;
-  37      if &quot;HEARTBLEED&quot; in value:
-  38          return &quot;HEARTBLEED&quot;
-  39      if &quot;DOS&quot; in value:
-  40          return &quot;DOS&quot;
-  41      if &quot;FTP&quot; in value or &quot;SSH&quot; in value or &quot;BRUTE&quot; in value or &quot;PATATOR&quot; in value:
-  42          return &quot;BRUTE_FORCE&quot;
-  43      if &quot;WEB&quot; in value:
-  44          return &quot;WEB&quot;
-  45      if &quot;PORTSCAN&quot; in value or &quot;PORT SCAN&quot; in value:
-  46          return &quot;PORTSCAN&quot;
-  47      if &quot;BOT&quot; in value:
-  48          return &quot;BOTNET&quot;
-  49      if &quot;INFILTRATION&quot; in value:
-  50          return &quot;INFILTRATION&quot;
-  51      return &quot;OTHER_ATTACK&quot;
-  52  
-  53  
-  54  def _allocation_weights(
-  55      group: str,
-  56      hospitals: tuple[Hospital, ...],
-  57      rng: np.random.Generator,
-  58      alpha: float,
-  59  ) -&gt; np.ndarray:
-  60      base = rng.dirichlet(np.full(len(hospitals), alpha))
-  61      preference = np.array(
-  62          [3.0 if group in hospital.preferred_attack_groups else 0.25 for hospital in hospitals],
-  63          dtype=float,
-  64      )
-  65      if group != &quot;BENIGN&quot;:
-  66          preference += np.array(
-  67              [0.50 if hospital.hospital_id == &quot;hospital_na_03&quot; else 0.0 for hospital in hospitals]
-  68          )
-  69      weights = base * preference
-  70      if weights.sum() &lt;= 0:
-  71          weights = np.ones(len(hospitals), dtype=float)
-  72      return weights / weights.sum()</code></pre></figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L112-L128">Dirichlet assignment by group</a></figcaption><pre><code> 112  def allocate_hospitals(df: pd.DataFrame, alpha: float, seed: int) -&gt; pd.Series:
- 113      rng = np.random.default_rng(seed)
- 114      hospital_ids = np.array([hospital.hospital_id for hospital in HOSPITALS])
- 115      groups = df[&quot;attack_type&quot;].map(attack_group) if &quot;attack_type&quot; in df.columns else df[&quot;label&quot;].map(str)
- 116      assignments = pd.Series(index=df.index, dtype=&quot;object&quot;)
- 117  
- 118      for group, group_index in groups.groupby(groups).groups.items():
- 119          idx = np.array(list(group_index))
- 120          weights = _allocation_weights(str(group), HOSPITALS, rng, alpha)
- 121          assignments.loc[idx] = rng.choice(hospital_ids, size=len(idx), p=weights)
- 122  
- 123      benign_mask = groups == &quot;BENIGN&quot;
- 124      attack_mask = groups != &quot;BENIGN&quot;
- 125      _repair_min_group_rows(assignments, benign_mask, min_rows=10, rng=rng)
- 126      _repair_min_group_rows(assignments, attack_mask, min_rows=1, rng=rng)
- 127  
- 128      return assignments</code></pre></figure><h2>Train-only scaling</h2><p>The MVP demo fits imputation and standardization from the simulated train splits. It then transforms train, validation, and test for every hospital with those values.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L167-L193">scripts/make_partitions.py:167-193</a></figcaption><pre><code> 167  def _fit_scaler(train_frames: list[pd.DataFrame], feature_cols: list[str]) -&gt; dict:
- 168      train_features = pd.concat([frame[feature_cols] for frame in train_frames], ignore_index=True)
- 169      train_features = train_features.replace([np.inf, -np.inf], np.nan)
- 170      impute_values = train_features.median(numeric_only=True).fillna(0.0)
- 171      imputed = train_features.fillna(impute_values)
- 172      means = imputed.mean(numeric_only=True)
- 173      stds = imputed.std(numeric_only=True, ddof=0).replace(0.0, 1.0).fillna(1.0)
- 174      return {
- 175          &quot;features&quot;: feature_cols,
- 176          &quot;impute_values&quot;: {col: float(impute_values[col]) for col in feature_cols},
- 177          &quot;mean&quot;: {col: float(means[col]) for col in feature_cols},
- 178          &quot;std&quot;: {col: float(stds[col]) for col in feature_cols},
- 179          &quot;fitted_on&quot;: &quot;concatenated hospital train splits&quot;,
- 180      }
- 181  
- 182  
- 183  def _transform_split(df: pd.DataFrame, scaler: dict) -&gt; pd.DataFrame:
- 184      feature_cols = list(scaler[&quot;features&quot;])
- 185      x = df[feature_cols].astype(&quot;float64&quot;).replace([np.inf, -np.inf], np.nan)
- 186      impute = pd.Series(scaler[&quot;impute_values&quot;])
- 187      mean = pd.Series(scaler[&quot;mean&quot;])
- 188      std = pd.Series(scaler[&quot;std&quot;])
- 189      x = x.fillna(impute)
- 190      x = (x - mean) / std
- 191      out = x.astype(&quot;float32&quot;)
- 192      out[&quot;label&quot;] = df[&quot;label&quot;].astype(&quot;int64&quot;).to_numpy()
- 193      return out</code></pre></figure><h2>Expected output</h2><figure><figcaption>Local artifacts ignored by Git</figcaption><pre><code>
-data/partitions/hospital_eu_01/train.parquet
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>02 - Reproducible data pipeline</h1><p>How CIC-IDS2017 CSVs become six simulated hospital partitions with a non-IID split.</p></section><h2>Cleaning</h2><p>The cleaning step concatenates the CSVs, normalizes column names, finds the Label column, maps BENIGN to 0 and every attack to 1, drops metadata/leakage columns, and keeps numeric features.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/prepare_cicids.py#L54-L122">scripts/prepare_cicids.py:54-122</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">clean_cicids_csvs</span><span class="p">(</span>
+    <span class="n">raw_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">max_missing_fraction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.40</span><span class="p">,</span>
+    <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">global_impute</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+    <span class="n">csvs</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">raw_dir</span><span class="o">.</span><span class="n">rglob</span><span class="p">(</span><span class="s2">&quot;*.csv&quot;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">csvs</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No CIC-IDS2017 CSV files found under </span><span class="si">{</span><span class="n">raw_dir</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">frames</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">csv_path</span> <span class="ow">in</span> <span class="n">csvs</span><span class="p">:</span>
+        <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Reading </span><span class="si">{</span><span class="n">csv_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">frame</span> <span class="o">=</span> <span class="n">_read_csv</span><span class="p">(</span><span class="n">csv_path</span><span class="p">)</span>
+        <span class="n">frame</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="n">_unique_columns</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">frame</span><span class="o">.</span><span class="n">columns</span><span class="p">])</span>
+        <span class="n">frames</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">frames</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">max_rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">max_rows</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">max_rows</span><span class="p">:</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="n">max_rows</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">label_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;label&quot;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">label_cols</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Could not find a CIC-IDS2017 label column&quot;</span><span class="p">)</span>
+    <span class="n">label_col</span> <span class="o">=</span> <span class="n">label_cols</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">raw_labels</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">label_col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">attack_type</span> <span class="o">=</span> <span class="n">raw_labels</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">({</span><span class="s2">&quot;&quot;</span><span class="p">:</span> <span class="s2">&quot;UNKNOWN&quot;</span><span class="p">})</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="p">(</span><span class="n">attack_type</span> <span class="o">!=</span> <span class="s2">&quot;BENIGN&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;int64&quot;</span><span class="p">)</span>
+
+    <span class="n">drop_cols</span> <span class="o">=</span> <span class="p">{</span><span class="n">label_col</span><span class="p">}</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">base_col</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;__&quot;</span><span class="p">,</span> <span class="n">maxsplit</span><span class="o">=</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">base_col</span> <span class="ow">in</span> <span class="n">LEAKAGE_COLUMNS</span><span class="p">:</span>
+            <span class="n">drop_cols</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">col</span><span class="p">)</span>
+
+    <span class="n">features</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">drop_cols</span><span class="p">),</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">)</span>
+    <span class="n">numeric</span> <span class="o">=</span> <span class="n">features</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span>
+    <span class="n">numeric</span> <span class="o">=</span> <span class="n">numeric</span><span class="o">.</span><span class="n">replace</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">,</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+
+    <span class="n">missing_fraction</span> <span class="o">=</span> <span class="n">numeric</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">kept_cols</span> <span class="o">=</span> <span class="n">missing_fraction</span><span class="p">[</span><span class="n">missing_fraction</span> <span class="o">&lt;=</span> <span class="n">max_missing_fraction</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+    <span class="n">dropped_cols</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">numeric</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">kept_cols</span><span class="p">))</span>
+    <span class="n">numeric</span> <span class="o">=</span> <span class="n">numeric</span><span class="p">[</span><span class="n">kept_cols</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">global_impute</span><span class="p">:</span>
+        <span class="n">medians</span> <span class="o">=</span> <span class="n">numeric</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">numeric_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">numeric</span> <span class="o">=</span> <span class="n">numeric</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">medians</span><span class="p">)</span>
+
+    <span class="n">cleaned</span> <span class="o">=</span> <span class="n">numeric</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">cleaned</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">labels</span>
+    <span class="n">cleaned</span><span class="p">[</span><span class="s2">&quot;attack_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">attack_type</span>
+
+    <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;source_files&quot;</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">csvs</span><span class="p">],</span>
+        <span class="s2">&quot;rows&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cleaned</span><span class="p">)),</span>
+        <span class="s2">&quot;feature_columns&quot;</span><span class="p">:</span> <span class="n">kept_cols</span><span class="p">,</span>
+        <span class="s2">&quot;num_features&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">kept_cols</span><span class="p">)),</span>
+        <span class="s2">&quot;label_mapping&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;BENIGN&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;ATTACK&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>
+        <span class="s2">&quot;attack_distribution&quot;</span><span class="p">:</span> <span class="n">attack_type</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(),</span>
+        <span class="s2">&quot;dropped_columns&quot;</span><span class="p">:</span> <span class="n">dropped_cols</span><span class="p">,</span>
+        <span class="s2">&quot;max_missing_fraction&quot;</span><span class="p">:</span> <span class="n">max_missing_fraction</span><span class="p">,</span>
+        <span class="s2">&quot;global_impute&quot;</span><span class="p">:</span> <span class="n">global_impute</span><span class="p">,</span>
+        <span class="s2">&quot;note&quot;</span><span class="p">:</span> <span class="p">(</span>
+            <span class="s2">&quot;Final train-only imputation and standardization are performed by &quot;</span>
+            <span class="s2">&quot;scripts/make_partitions.py.&quot;</span>
+        <span class="p">),</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">cleaned</span><span class="p">,</span> <span class="n">metadata</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/prepare_cicids.py#L60-L62">Lines 60-62</a> fail early if the raw CSVs are missing. This is better than silently creating empty partitions.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/prepare_cicids.py#L64-L71">Lines 64-71</a> read every CIC-IDS2017 CSV and concatenate them into one simulation input.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/prepare_cicids.py#L75-L83">Lines 75-83</a> implement the binary label correction: BENIGN is 0 and every attack label is 1.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/prepare_cicids.py#L84-L97">Lines 84-97</a> drop metadata/leakage columns and keep numeric features only.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/prepare_cicids.py#L103-L105">Lines 103-105</a> keep <code>attack_type</code> only for partitioning; training splits later contain numeric features plus <code>label</code>.</li></ul></div><h2>Non-IID split with seed 123</h2><p>Partitioning assigns attack groups to hospitals with biased weights. This makes each hospital see a different distribution, which is the interesting case for FL.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L31-L72">Attack grouping and hospital preferences</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">attack_group</span><span class="p">(</span><span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">label</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="o">==</span> <span class="s2">&quot;BENIGN&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;BENIGN&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;DDOS&quot;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;DDOS&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;HEARTBLEED&quot;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;HEARTBLEED&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;DOS&quot;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;DOS&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;FTP&quot;</span> <span class="ow">in</span> <span class="n">value</span> <span class="ow">or</span> <span class="s2">&quot;SSH&quot;</span> <span class="ow">in</span> <span class="n">value</span> <span class="ow">or</span> <span class="s2">&quot;BRUTE&quot;</span> <span class="ow">in</span> <span class="n">value</span> <span class="ow">or</span> <span class="s2">&quot;PATATOR&quot;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;BRUTE_FORCE&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;WEB&quot;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;WEB&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;PORTSCAN&quot;</span> <span class="ow">in</span> <span class="n">value</span> <span class="ow">or</span> <span class="s2">&quot;PORT SCAN&quot;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;PORTSCAN&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;BOT&quot;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;BOTNET&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;INFILTRATION&quot;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;INFILTRATION&quot;</span>
+    <span class="k">return</span> <span class="s2">&quot;OTHER_ATTACK&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_allocation_weights</span><span class="p">(</span>
+    <span class="n">group</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">hospitals</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Hospital</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span><span class="p">,</span>
+    <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">dirichlet</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">hospitals</span><span class="p">),</span> <span class="n">alpha</span><span class="p">))</span>
+    <span class="n">preference</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+        <span class="p">[</span><span class="mf">3.0</span> <span class="k">if</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">hospital</span><span class="o">.</span><span class="n">preferred_attack_groups</span> <span class="k">else</span> <span class="mf">0.25</span> <span class="k">for</span> <span class="n">hospital</span> <span class="ow">in</span> <span class="n">hospitals</span><span class="p">],</span>
+        <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">group</span> <span class="o">!=</span> <span class="s2">&quot;BENIGN&quot;</span><span class="p">:</span>
+        <span class="n">preference</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[</span><span class="mf">0.50</span> <span class="k">if</span> <span class="n">hospital</span><span class="o">.</span><span class="n">hospital_id</span> <span class="o">==</span> <span class="s2">&quot;hospital_na_03&quot;</span> <span class="k">else</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">hospital</span> <span class="ow">in</span> <span class="n">hospitals</span><span class="p">]</span>
+        <span class="p">)</span>
+    <span class="n">weights</span> <span class="o">=</span> <span class="n">base</span> <span class="o">*</span> <span class="n">preference</span>
+    <span class="k">if</span> <span class="n">weights</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">hospitals</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">weights</span> <span class="o">/</span> <span class="n">weights</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+</pre></div></td></tr></table></div>
+</figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L112-L128">Dirichlet assignment by group</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">allocate_hospitals</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">hospital_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">hospital</span><span class="o">.</span><span class="n">hospital_id</span> <span class="k">for</span> <span class="n">hospital</span> <span class="ow">in</span> <span class="n">HOSPITALS</span><span class="p">])</span>
+    <span class="n">groups</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;attack_type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">attack_group</span><span class="p">)</span> <span class="k">if</span> <span class="s2">&quot;attack_type&quot;</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span>
+    <span class="n">assignments</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;object&quot;</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">group</span><span class="p">,</span> <span class="n">group_index</span> <span class="ow">in</span> <span class="n">groups</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span><span class="o">.</span><span class="n">groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">group_index</span><span class="p">))</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="n">_allocation_weights</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">HOSPITALS</span><span class="p">,</span> <span class="n">rng</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span>
+        <span class="n">assignments</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">hospital_ids</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">),</span> <span class="n">p</span><span class="o">=</span><span class="n">weights</span><span class="p">)</span>
+
+    <span class="n">benign_mask</span> <span class="o">=</span> <span class="n">groups</span> <span class="o">==</span> <span class="s2">&quot;BENIGN&quot;</span>
+    <span class="n">attack_mask</span> <span class="o">=</span> <span class="n">groups</span> <span class="o">!=</span> <span class="s2">&quot;BENIGN&quot;</span>
+    <span class="n">_repair_min_group_rows</span><span class="p">(</span><span class="n">assignments</span><span class="p">,</span> <span class="n">benign_mask</span><span class="p">,</span> <span class="n">min_rows</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span>
+    <span class="n">_repair_min_group_rows</span><span class="p">(</span><span class="n">assignments</span><span class="p">,</span> <span class="n">attack_mask</span><span class="p">,</span> <span class="n">min_rows</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">assignments</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>Why this split matters</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L31-L51">Lines 31-51</a> compress many CIC-IDS2017 attack strings into stable attack groups.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L60-L72">Lines 60-72</a> combine a Dirichlet draw with each hospital's preferred attack groups. This creates non-IID partitions without hand-picking every row.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L112-L128">Lines 112-128</a> assigns rows group by group and repairs minimum benign/attack coverage where possible.</li><li>The seed controls the random generator, so the same processed parquet produces the same hospital partitions when <code>SEED=123</code> is used.</li></ul></div><h2>Train-only scaling</h2><p>The MVP demo fits imputation and standardization from the simulated train splits. It then transforms train, validation, and test for every hospital with those values.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L167-L193">scripts/make_partitions.py:167-193</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span>
+<span class="normal">180</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_fit_scaler</span><span class="p">(</span><span class="n">train_frames</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="n">feature_cols</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="n">train_features</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">frame</span><span class="p">[</span><span class="n">feature_cols</span><span class="p">]</span> <span class="k">for</span> <span class="n">frame</span> <span class="ow">in</span> <span class="n">train_frames</span><span class="p">],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">train_features</span> <span class="o">=</span> <span class="n">train_features</span><span class="o">.</span><span class="n">replace</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">,</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+    <span class="n">impute_values</span> <span class="o">=</span> <span class="n">train_features</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">numeric_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">imputed</span> <span class="o">=</span> <span class="n">train_features</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">impute_values</span><span class="p">)</span>
+    <span class="n">means</span> <span class="o">=</span> <span class="n">imputed</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">numeric_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">stds</span> <span class="o">=</span> <span class="n">imputed</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">numeric_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">ddof</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;features&quot;</span><span class="p">:</span> <span class="n">feature_cols</span><span class="p">,</span>
+        <span class="s2">&quot;impute_values&quot;</span><span class="p">:</span> <span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">impute_values</span><span class="p">[</span><span class="n">col</span><span class="p">])</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">feature_cols</span><span class="p">},</span>
+        <span class="s2">&quot;mean&quot;</span><span class="p">:</span> <span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">means</span><span class="p">[</span><span class="n">col</span><span class="p">])</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">feature_cols</span><span class="p">},</span>
+        <span class="s2">&quot;std&quot;</span><span class="p">:</span> <span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">stds</span><span class="p">[</span><span class="n">col</span><span class="p">])</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">feature_cols</span><span class="p">},</span>
+        <span class="s2">&quot;fitted_on&quot;</span><span class="p">:</span> <span class="s2">&quot;concatenated hospital train splits&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_transform_split</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">scaler</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="n">feature_cols</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">scaler</span><span class="p">[</span><span class="s2">&quot;features&quot;</span><span class="p">])</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">feature_cols</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;float64&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">,</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+    <span class="n">impute</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">scaler</span><span class="p">[</span><span class="s2">&quot;impute_values&quot;</span><span class="p">])</span>
+    <span class="n">mean</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">scaler</span><span class="p">[</span><span class="s2">&quot;mean&quot;</span><span class="p">])</span>
+    <span class="n">std</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">scaler</span><span class="p">[</span><span class="s2">&quot;std&quot;</span><span class="p">])</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">impute</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">std</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;float32&quot;</span><span class="p">)</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;int64&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">out</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L167-L180">Lines 167-180</a> fit imputation and standardization from train splits only.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/make_partitions.py#L183-L193">Lines 183-193</a> apply the stored impute/mean/std values to every split and write a compact training table.</li><li>This is still a simulation-level scaler. A more privacy-preserving version would aggregate local count/sum/sumsq statistics instead of fitting centrally.</li></ul></div><h2>Expected output</h2><figure><figcaption>Local artifacts ignored by Git</figcaption><div class="highlight"><pre><span></span>data/partitions/hospital_eu_01/train.parquet
 data/partitions/hospital_eu_01/val.parquet
 data/partitions/hospital_eu_01/test.parquet
 data/partitions/hospital_eu_01/metadata.json
 ...
-shared/preprocessing/scaler.json</code></pre></figure><div class="pager"><a href="01-setup.html">Previous: 01 - Setup from scratch</a><span></span><a href="03-flower-runtime.html">Next: 03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a></div>
+shared/preprocessing/scaler.json
+</pre></div>
+</figure><h2>What the generated partitions look like</h2><p>The chart below is generated from the local <code>metadata.json</code> files created by the partitioning script. The uneven bar sizes and different attack ratios are intentional: they show that hospitals do not receive identical data distributions.</p><figure class="chart"><figcaption>Training rows per hospital after non-IID partitioning</figcaption><svg viewBox="0 0 1040 342" role="img" aria-label="Hospital partition chart"><text x="190" y="28" class="chart-label">BENIGN</text><rect x="250" y="15" width="20" height="14" fill="#0f766e" /><text x="295" y="28" class="chart-label">ATTACK</text><rect x="355" y="15" width="20" height="14" fill="#dc2626" /><text x="20" y="73" class="chart-label">hospital_eu_01</text><rect x="190" y="55" width="2" height="24" fill="#0f766e" /><rect x="192" y="55" width="0" height="24" fill="#dc2626" /><text x="830" y="73" class="chart-label">region_eu | train=4,710 | attack=1,000</text><text x="20" y="115" class="chart-label">hospital_eu_02</text><rect x="190" y="97" width="1" height="24" fill="#0f766e" /><rect x="191" y="97" width="21" height="24" fill="#dc2626" /><text x="830" y="115" class="chart-label">region_eu | train=30,994 | attack=29,262</text><text x="20" y="157" class="chart-label">hospital_eu_03</text><rect x="190" y="139" width="612" height="24" fill="#0f766e" /><rect x="802" y="139" width="7" height="24" fill="#dc2626" /><text x="830" y="157" class="chart-label">region_eu | train=835,469 | attack=10,468</text><text x="20" y="199" class="chart-label">hospital_na_01</text><rect x="190" y="181" width="255" height="24" fill="#0f766e" /><rect x="445" y="181" width="123" height="24" fill="#dc2626" /><text x="830" y="199" class="chart-label">region_na | train=510,580 | attack=166,678</text><text x="20" y="241" class="chart-label">hospital_na_02</text><rect x="190" y="223" width="46" height="24" fill="#0f766e" /><rect x="236" y="223" width="20" height="24" fill="#dc2626" /><text x="830" y="241" class="chart-label">region_na | train=91,259 | attack=28,247</text><text x="20" y="283" class="chart-label">hospital_na_03</text><rect x="190" y="265" width="262" height="24" fill="#0f766e" /><rect x="452" y="265" width="114" height="24" fill="#dc2626" /><text x="830" y="283" class="chart-label">region_na | train=508,505 | attack=154,696</text></svg></figure><aside class="lab-card"><strong>Hands-on lab: dataset and partitioning</strong><p>Open the rendered notebook when you want to see the dataset inspection workflow, partition metadata tables, and the commands used to build the local hospital folders.</p><a href="../renders/00_dataset_and_partitioning.html">Open lab render</a></aside><div class="pager"><a href="01-setup.html">Previous: 01 - Setup from scratch</a><span></span><a href="03-flower-runtime.html">Next: 03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a></div>
     </main>
   </div>
 </body>

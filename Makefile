@@ -1,4 +1,7 @@
-.PHONY: install data partition compose flower-config up down train eval demo render-runtime-notebook pages baselines flat local centralized clean
+SHELL := /bin/bash
+.SHELLFLAGS := -euo pipefail -c
+
+.PHONY: install data partition compose flower-config up down train eval predict demo render-runtime-notebook pages baselines flat local centralized clean
 
 SEED ?= 123
 GLOBAL_ROUNDS ?= 3
@@ -40,18 +43,35 @@ eval:
 	python scripts/evaluate_global_model.py \
 		--checkpoint shared/checkpoints/global/round_$(GLOBAL_ROUNDS).pt
 
-demo: compose flower-config up
+predict:
+	python scripts/predict_with_checkpoint.py \
+		--checkpoint shared/checkpoints/global/round_$(GLOBAL_ROUNDS).pt \
+		--hospital-id hospital_eu_01 \
+		--output reports/predictions_hospital_eu_01.csv
+
+demo: compose flower-config
+	docker compose down --remove-orphans
+	docker compose up --build -d
+	@echo "Waiting for Flower services to accept CLI submissions..."
+	sleep 20
+	@mkdir -p reports
+	@: > reports/demo_transcript.txt
+	rm -rf shared/checkpoints/global shared/checkpoints/region_eu shared/checkpoints/region_na
 	python scripts/run_hierarchical_rounds.py \
 		--global-rounds $(DEMO_GLOBAL_ROUNDS) \
 		--regional-rounds $(DEMO_REGIONAL_ROUNDS) \
-		--batch-size $(DEMO_BATCH_SIZE)
+		--batch-size $(DEMO_BATCH_SIZE) 2>&1 | tee -a reports/demo_transcript.txt
 	python scripts/evaluate_global_model.py \
 		--checkpoint shared/checkpoints/global/round_$(DEMO_GLOBAL_ROUNDS).pt \
-		--batch-size $(DEMO_BATCH_SIZE)
-	python scripts/render_runtime_notebook.py
-	python scripts/build_pages.py
-	@printf '\nGlobal metrics summary:\n'
-	@cat reports/metrics_summary_global.csv
+		--batch-size $(DEMO_BATCH_SIZE) 2>&1 | tee -a reports/demo_transcript.txt
+	python scripts/predict_with_checkpoint.py \
+		--checkpoint shared/checkpoints/global/round_$(DEMO_GLOBAL_ROUNDS).pt \
+		--hospital-id hospital_eu_01 \
+		--output reports/predictions_hospital_eu_01.csv 2>&1 | tee -a reports/demo_transcript.txt
+	python scripts/render_runtime_notebook.py 2>&1 | tee -a reports/demo_transcript.txt
+	@printf '\nGlobal metrics summary:\n' | tee -a reports/demo_transcript.txt
+	@cat reports/metrics_summary_global.csv | tee -a reports/demo_transcript.txt
+	python scripts/build_pages.py 2>&1 | tee -a reports/demo_transcript.txt
 
 render-runtime-notebook:
 	python scripts/render_runtime_notebook.py
@@ -71,4 +91,4 @@ flat:
 baselines: centralized local flat
 
 clean:
-	rm -rf shared/checkpoints/* shared/metrics/* reports/*.csv reports/*.metadata.json
+	rm -rf shared/checkpoints/* shared/metrics/* reports/*.csv reports/*.metadata.json reports/demo_transcript.txt

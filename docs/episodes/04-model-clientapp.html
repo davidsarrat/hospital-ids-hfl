@@ -23,156 +23,308 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>04 - Model and hospital ClientApp</h1><p>How local parquet is loaded, the MLP is trained, and an update is returned to Flower.</p></section><h2>Dataset and MLP</h2><p>The main model is intentionally simple so FedAvg remains transparent: a tabular MLP with one logit output and BCEWithLogitsLoss.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L12-L63">hfl_cicids/task.py:12-63</a></figcaption><pre><code>  12  class IDSFlowDataset(Dataset):
-  13      &quot;&quot;&quot;Parquet-backed CIC-IDS2017 binary classification dataset.&quot;&quot;&quot;
-  14  
-  15      def __init__(self, path: str | Path) -&gt; None:
-  16          path = Path(path)
-  17          if not path.exists():
-  18              raise FileNotFoundError(f&quot;Dataset split not found: {path}&quot;)
-  19  
-  20          df = pd.read_parquet(path)
-  21          if &quot;label&quot; not in df.columns:
-  22              raise ValueError(f&quot;&#x27;label&#x27; column missing in {path}&quot;)
-  23  
-  24          self.y = df[&quot;label&quot;].astype(&quot;float32&quot;).to_numpy(copy=True)
-  25          self.x = df.drop(columns=[&quot;label&quot;]).astype(&quot;float32&quot;).to_numpy(copy=True)
-  26  
-  27          if len(self.x) == 0:
-  28              raise ValueError(f&quot;Dataset split is empty: {path}&quot;)
-  29          if not np.isfinite(self.x).all():
-  30              raise ValueError(f&quot;Non-finite feature values found in {path}&quot;)
-  31  
-  32      def __len__(self) -&gt; int:
-  33          return len(self.y)
-  34  
-  35      def __getitem__(self, idx: int) -&gt; tuple[torch.Tensor, torch.Tensor]:
-  36          return (
-  37              torch.from_numpy(self.x[idx]),
-  38              torch.tensor(self.y[idx], dtype=torch.float32),
-  39          )
-  40  
-  41  
-  42  class TabularIDSNet(nn.Module):
-  43      &quot;&quot;&quot;Compact MLP for binary intrusion detection.&quot;&quot;&quot;
-  44  
-  45      def __init__(self, input_dim: int) -&gt; None:
-  46          super().__init__()
-  47          if input_dim &lt;= 0:
-  48              raise ValueError(f&quot;input_dim must be positive, got {input_dim}&quot;)
-  49  
-  50          self.net = nn.Sequential(
-  51              nn.Linear(input_dim, 128),
-  52              nn.LayerNorm(128),
-  53              nn.ReLU(),
-  54              nn.Dropout(0.10),
-  55              nn.Linear(128, 64),
-  56              nn.LayerNorm(64),
-  57              nn.ReLU(),
-  58              nn.Dropout(0.10),
-  59              nn.Linear(64, 1),
-  60          )
-  61  
-  62      def forward(self, x: torch.Tensor) -&gt; torch.Tensor:
-  63          return self.net(x).squeeze(1)</code></pre></figure><h2>Local training</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L88-L131">hfl_cicids/task.py:88-131</a></figcaption><pre><code>  88  def compute_pos_weight(train_loader: DataLoader) -&gt; torch.Tensor:
-  89      labels = []
-  90      for _, y in train_loader:
-  91          labels.append(y)
-  92      y_all = torch.cat(labels)
-  93      positives = torch.sum(y_all == 1).item()
-  94      negatives = torch.sum(y_all == 0).item()
-  95      if positives == 0:
-  96          return torch.tensor(1.0)
-  97      return torch.tensor(max(1.0, negatives / positives))
-  98  
-  99  
- 100  def train_one_client(
- 101      model: nn.Module,
- 102      train_loader: DataLoader,
- 103      epochs: int,
- 104      lr: float,
- 105      device: torch.device,
- 106  ) -&gt; float:
- 107      model.to(device)
- 108      model.train()
- 109  
- 110      pos_weight = compute_pos_weight(train_loader).to(device)
- 111      criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
- 112      optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
- 113  
- 114      total_loss = 0.0
- 115      total_batches = 0
- 116  
- 117      for _ in range(epochs):
- 118          for x, y in train_loader:
- 119              x = x.to(device)
- 120              y = y.to(device)
- 121  
- 122              optimizer.zero_grad()
- 123              logits = model(x)
- 124              loss = criterion(logits, y)
- 125              loss.backward()
- 126              optimizer.step()
- 127  
- 128              total_loss += float(loss.item())
- 129              total_batches += 1
- 130  
- 131      return total_loss / max(1, total_batches)</code></pre></figure><h2>Hospital ClientApp</h2><p>When the node role is hospital, Flower sends initial arrays. The ClientApp loads those weights, trains on <code>/data/train.parquet</code>, evaluates on validation, and returns arrays plus metrics. The <code>num-examples</code> key enables weighted FedAvg.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L32-L84">hfl_cicids/client_app.py:32-84</a></figcaption><pre><code>  32  @app.train()
-  33  def train(msg: Message, context: Context) -&gt; Message:
-  34      &quot;&quot;&quot;Train a hospital model or return a regional checkpoint as gateway update.&quot;&quot;&quot;
-  35  
-  36      role = str(context.node_config.get(&quot;role&quot;, &quot;hospital&quot;))
-  37  
-  38      if role == &quot;region-gateway&quot;:
-  39          return _train_region_gateway(msg, context)
-  40  
-  41      return _train_hospital(msg, context)
-  42  
-  43  
-  44  def _train_hospital(msg: Message, context: Context) -&gt; Message:
-  45      data_dir = Path(str(context.node_config[&quot;data-dir&quot;]))
-  46      batch_size = int(context.run_config[&quot;batch-size&quot;])
-  47      local_epochs = int(context.run_config[&quot;local-epochs&quot;])
-  48      config = _msg_config(msg)
-  49      lr = float(config.get(&quot;lr&quot;, context.run_config[&quot;learning-rate&quot;]))
-  50  
-  51      input_dim = infer_input_dim(data_dir)
-  52      model = TabularIDSNet(input_dim=input_dim)
-  53      model.load_state_dict(msg.content[&quot;arrays&quot;].to_torch_state_dict())
-  54  
-  55      train_loader, val_loader, _ = load_dataloaders(data_dir, batch_size)
-  56      loss = train_one_client(
-  57          model=model,
-  58          train_loader=train_loader,
-  59          epochs=local_epochs,
-  60          lr=lr,
-  61          device=_device(),
-  62      )
-  63  
-  64      val_metrics = evaluate_binary_classifier(model, val_loader, _device())
-  65  
-  66      metrics = {
-  67          &quot;train_loss&quot;: float(loss),
-  68          &quot;num-examples&quot;: int(len(train_loader.dataset)),
-  69          &quot;val_f1&quot;: float(val_metrics[&quot;eval_f1&quot;]),
-  70          &quot;val_roc_auc&quot;: float(val_metrics[&quot;eval_roc_auc&quot;]),
-  71          &quot;val_auprc&quot;: float(val_metrics[&quot;eval_auprc&quot;]),
-  72          &quot;val_false_positive_rate&quot;: float(val_metrics[&quot;eval_false_positive_rate&quot;]),
-  73          &quot;val_false_negative_rate&quot;: float(val_metrics[&quot;eval_false_negative_rate&quot;]),
-  74      }
-  75  
-  76      return Message(
-  77          content=RecordDict(
-  78              {
-  79                  &quot;arrays&quot;: ArrayRecord(model.state_dict()),
-  80                  &quot;metrics&quot;: MetricRecord(metrics),
-  81              }
-  82          ),
-  83          reply_to=msg,
-  84      )</code></pre></figure><div class="pager"><a href="03-flower-runtime.html">Previous: 03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a><span></span><a href="05-serverapp-fedavg.html">Next: 05 - Regional ServerApp and FedAvg</a></div>
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>04 - Model and hospital ClientApp</h1><p>How local parquet is loaded, the MLP is trained, and an update is returned to Flower.</p></section><h2>Dataset and MLP</h2><p>The main model is intentionally simple so FedAvg remains transparent: a tabular MLP with one logit output and BCEWithLogitsLoss.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L12-L63">hfl_cicids/task.py:12-63</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">IDSFlowDataset</span><span class="p">(</span><span class="n">Dataset</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parquet-backed CIC-IDS2017 binary classification dataset.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dataset split not found: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;label&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&#39;label&#39; column missing in </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;float32&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;float32&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dataset split is empty: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Non-finite feature values found in </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="n">idx</span><span class="p">]),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
+        <span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">TabularIDSNet</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compact MLP for binary intrusion detection.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">input_dim</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;input_dim must be positive, got </span><span class="si">{</span><span class="n">input_dim</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">input_dim</span><span class="p">,</span> <span class="mi">128</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="mi">128</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="mf">0.10</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="mi">64</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="mf">0.10</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L12-L30">Lines 12-30</a> load one parquet split and validate that all features are finite.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L24-L25">Lines 24-25</a> separate labels from features and convert them to float32 arrays for PyTorch.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L42-L63">Lines 42-63</a> define the MLP. The final layer has one output because this is binary benign-vs-attack classification.</li><li>The model is intentionally averageable: its state dict is a set of tensors that Flower can aggregate with FedAvg.</li></ul></div><h2>Local training</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L88-L131">hfl_cicids/task.py:88-131</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">compute_pos_weight</span><span class="p">(</span><span class="n">train_loader</span><span class="p">:</span> <span class="n">DataLoader</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">train_loader</span><span class="p">:</span>
+        <span class="n">labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+    <span class="n">y_all</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
+    <span class="n">positives</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">y_all</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+    <span class="n">negatives</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">y_all</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">positives</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">negatives</span> <span class="o">/</span> <span class="n">positives</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">train_one_client</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
+    <span class="n">train_loader</span><span class="p">:</span> <span class="n">DataLoader</span><span class="p">,</span>
+    <span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+
+    <span class="n">pos_weight</span> <span class="o">=</span> <span class="n">compute_pos_weight</span><span class="p">(</span><span class="n">train_loader</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">criterion</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">BCEWithLogitsLoss</span><span class="p">(</span><span class="n">pos_weight</span><span class="o">=</span><span class="n">pos_weight</span><span class="p">)</span>
+    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">)</span>
+
+    <span class="n">total_loss</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">total_batches</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">epochs</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">train_loader</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+            <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">criterion</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+            <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+            <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+            <span class="n">total_loss</span> <span class="o">+=</span> <span class="nb">float</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+            <span class="n">total_batches</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">return</span> <span class="n">total_loss</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">total_batches</span><span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L88-L97">Lines 88-97</a> compute <code>pos_weight</code> to reduce the impact of class imbalance during binary classification.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L110-L112">Lines 110-112</a> create the weighted BCE loss and AdamW optimizer used by every hospital.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L117-L129">Lines 117-129</a> run the local epochs. No server or other hospital data is accessed here.</li><li>This function knows nothing about Flower. That makes the ML task testable on its own and keeps Flower-specific logic in the ClientApp.</li></ul></div><h2>Hospital ClientApp</h2><p>When the node role is hospital, Flower sends initial arrays. The ClientApp loads those weights, trains on <code>/data/train.parquet</code>, evaluates on validation, and returns arrays plus metrics. The <code>num-examples</code> key enables weighted FedAvg.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L32-L84">hfl_cicids/client_app.py:32-84</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span></pre></div></td><td class="code"><div><pre><span></span><span class="nd">@app</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">train</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Message</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Train a hospital model or return a regional checkpoint as gateway update.&quot;&quot;&quot;</span>
+
+    <span class="n">role</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">node_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;role&quot;</span><span class="p">,</span> <span class="s2">&quot;hospital&quot;</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="n">role</span> <span class="o">==</span> <span class="s2">&quot;region-gateway&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_train_region_gateway</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">_train_hospital</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_train_hospital</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Message</span><span class="p">:</span>
+    <span class="n">data_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">node_config</span><span class="p">[</span><span class="s2">&quot;data-dir&quot;</span><span class="p">]))</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;batch-size&quot;</span><span class="p">])</span>
+    <span class="n">local_epochs</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;local-epochs&quot;</span><span class="p">])</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">_msg_config</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+    <span class="n">lr</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;lr&quot;</span><span class="p">,</span> <span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;learning-rate&quot;</span><span class="p">]))</span>
+
+    <span class="n">input_dim</span> <span class="o">=</span> <span class="n">infer_input_dim</span><span class="p">(</span><span class="n">data_dir</span><span class="p">)</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">TabularIDSNet</span><span class="p">(</span><span class="n">input_dim</span><span class="o">=</span><span class="n">input_dim</span><span class="p">)</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">content</span><span class="p">[</span><span class="s2">&quot;arrays&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_torch_state_dict</span><span class="p">())</span>
+
+    <span class="n">train_loader</span><span class="p">,</span> <span class="n">val_loader</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_dataloaders</span><span class="p">(</span><span class="n">data_dir</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">)</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">train_one_client</span><span class="p">(</span>
+        <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+        <span class="n">train_loader</span><span class="o">=</span><span class="n">train_loader</span><span class="p">,</span>
+        <span class="n">epochs</span><span class="o">=</span><span class="n">local_epochs</span><span class="p">,</span>
+        <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span>
+        <span class="n">device</span><span class="o">=</span><span class="n">_device</span><span class="p">(),</span>
+    <span class="p">)</span>
+
+    <span class="n">val_metrics</span> <span class="o">=</span> <span class="n">evaluate_binary_classifier</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">val_loader</span><span class="p">,</span> <span class="n">_device</span><span class="p">())</span>
+
+    <span class="n">metrics</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;train_loss&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">loss</span><span class="p">),</span>
+        <span class="s2">&quot;num-examples&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">train_loader</span><span class="o">.</span><span class="n">dataset</span><span class="p">)),</span>
+        <span class="s2">&quot;val_f1&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">val_metrics</span><span class="p">[</span><span class="s2">&quot;eval_f1&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;val_roc_auc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">val_metrics</span><span class="p">[</span><span class="s2">&quot;eval_roc_auc&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;val_auprc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">val_metrics</span><span class="p">[</span><span class="s2">&quot;eval_auprc&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;val_false_positive_rate&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">val_metrics</span><span class="p">[</span><span class="s2">&quot;eval_false_positive_rate&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;val_false_negative_rate&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">val_metrics</span><span class="p">[</span><span class="s2">&quot;eval_false_negative_rate&quot;</span><span class="p">]),</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="n">Message</span><span class="p">(</span>
+        <span class="n">content</span><span class="o">=</span><span class="n">RecordDict</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;arrays&quot;</span><span class="p">:</span> <span class="n">ArrayRecord</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()),</span>
+                <span class="s2">&quot;metrics&quot;</span><span class="p">:</span> <span class="n">MetricRecord</span><span class="p">(</span><span class="n">metrics</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">),</span>
+        <span class="n">reply_to</span><span class="o">=</span><span class="n">msg</span><span class="p">,</span>
+    <span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L32-L41">Lines 32-41</a> route by node role. Hospitals train; gateways return regional checkpoints.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L44-L55">Lines 44-55</a> load only the mounted hospital data directory and the arrays sent by Flower.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L56-L64">Lines 56-64</a> execute local training and validation.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L66-L80">Lines 66-80</a> return two records: <code>arrays</code> for model parameters and <code>metrics</code> for aggregation metadata.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L68">Line 68</a> is critical: Flower's FedAvg uses <code>num-examples</code> as the weight for this hospital update.</li></ul></div><div class="pager"><a href="03-flower-runtime.html">Previous: 03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a><span></span><a href="05-serverapp-fedavg.html">Next: 05 - Regional ServerApp and FedAvg</a></div>
     </main>
   </div>
 </body>

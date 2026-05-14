@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>09 - End-to-end demo outputs - hospital-ids-hfl</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">hospital-ids-hfl handbook</a>
+    <a class="repo" href="https://github.com/davidsarrat/hospital-ids-hfl">GitHub</a>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Book index">
+      <a class="" href="../index.html">Home</a>
+<a class="" href="../episodes/00-roadmap.html">00 - Mental model and topology</a>
+<a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
+<a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
+<a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
+<a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
+<a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
+<a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
+<a class="active" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
+    </nav>
+    <main class="content">
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>09 - End-to-end demo outputs</h1><p>How to run the complete demo and interpret the visible training, evaluation, and prediction artifacts.</p></section><h2>One command for the live demo</h2><p>The easiest way to present the system is <code>make demo</code>. It assumes the dataset has already been downloaded and partitioned. It then regenerates Compose, configures Flower profiles, starts containers, runs one hierarchical training cycle, evaluates the global checkpoint, produces a small prediction table, refreshes notebook renders, rebuilds this handbook, and prints the global metrics summary.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L52-L74">make demo target</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span></pre></div></td><td class="code"><div><pre><span></span><span class="nf">demo</span><span class="o">:</span><span class="w"> </span><span class="n">compose</span> <span class="n">flower</span>-<span class="n">config</span>
+<span class="w">	</span>docker<span class="w"> </span>compose<span class="w"> </span>down<span class="w"> </span>--remove-orphans
+<span class="w">	</span>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>--build<span class="w"> </span>-d
+<span class="w">	</span>@echo<span class="w"> </span><span class="s2">&quot;Waiting for Flower services to accept CLI submissions...&quot;</span>
+<span class="w">	</span>sleep<span class="w"> </span><span class="m">20</span>
+<span class="w">	</span>@mkdir<span class="w"> </span>-p<span class="w"> </span>reports
+<span class="w">	</span>@:<span class="w"> </span>&gt;<span class="w"> </span>reports/demo_transcript.txt
+<span class="w">	</span>rm<span class="w"> </span>-rf<span class="w"> </span>shared/checkpoints/global<span class="w"> </span>shared/checkpoints/region_eu<span class="w"> </span>shared/checkpoints/region_na
+<span class="w">	</span>python<span class="w"> </span>scripts/run_hierarchical_rounds.py<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--global-rounds<span class="w"> </span><span class="k">$(</span>DEMO_GLOBAL_ROUNDS<span class="k">)</span><span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--regional-rounds<span class="w"> </span><span class="k">$(</span>DEMO_REGIONAL_ROUNDS<span class="k">)</span><span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--batch-size<span class="w"> </span><span class="k">$(</span>DEMO_BATCH_SIZE<span class="k">)</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
+<span class="w">	</span>python<span class="w"> </span>scripts/evaluate_global_model.py<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--checkpoint<span class="w"> </span>shared/checkpoints/global/round_<span class="k">$(</span>DEMO_GLOBAL_ROUNDS<span class="k">)</span>.pt<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--batch-size<span class="w"> </span><span class="k">$(</span>DEMO_BATCH_SIZE<span class="k">)</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
+<span class="w">	</span>python<span class="w"> </span>scripts/predict_with_checkpoint.py<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--checkpoint<span class="w"> </span>shared/checkpoints/global/round_<span class="k">$(</span>DEMO_GLOBAL_ROUNDS<span class="k">)</span>.pt<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--hospital-id<span class="w"> </span>hospital_eu_01<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--output<span class="w"> </span>reports/predictions_hospital_eu_01.csv<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
+<span class="w">	</span>python<span class="w"> </span>scripts/render_runtime_notebook.py<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
+<span class="w">	</span>@printf<span class="w"> </span><span class="s1">&#39;\nGlobal metrics summary:\n&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
+<span class="w">	</span>@cat<span class="w"> </span>reports/metrics_summary_global.csv<span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
+<span class="w">	</span>python<span class="w"> </span>scripts/build_pages.py<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L52-L59">Lines 52-59</a> start from a clean Docker federation, wait for the SuperLinks, reset demo checkpoints, and create a fresh transcript.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L60-L63">Lines 60-63</a> run the regional and global Flower federations through the orchestrator while appending logs to <code>reports/demo_transcript.txt</code>.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L64-L70">Lines 64-70</a> evaluate the produced global checkpoint and demonstrate inference by writing row-level predictions for one hospital.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L71-L74">Lines 71-74</a> refresh the educational artifacts and print the final metrics CSV.</li></ul></div><h2>Captured transcript</h2><p>The transcript below is intentionally not a clean benchmark table. It is a demo operator view: commands are printed, Flower streams progress, checkpoints and reports are written, and the final metrics are visible without opening any Python code.</p><figure><figcaption>Captured make demo transcript excerpt</figcaption><div class="highlight"><pre><span></span>──────────────────────────────── Global round 1 ────────────────────────────────
+Running: flwr run . region-eu --stream --run-config &#39;level=&quot;regional&quot; 
+[92mINFO [0m:      aggregate_train: Received 3 results and 0 failures
+[92mINFO [0m:      	└──&gt; Aggregated MetricRecord: {&#39;train_loss&#39;: 0.44111061219332715, &#39;val_f1&#39;: 0.2748170929692166, &#39;val_roc_auc&#39;: 0.9814099324867481, &#39;val_auprc&#39;: 0.7370027252624184, &#39;val_false_positive_rate&#39;: 0.11000702398757067, &#39;val_false_negative_rate&#39;: 0.019998102956170653}
+[92mINFO [0m:      aggregate_evaluate: Received 3 results and 0 failures
+[92mINFO [0m:      	{ 1: { &#39;train_loss&#39;: &#39;4.4111e-01&#39;,
+Running: flwr run . region-na --stream --run-config &#39;level=&quot;regional&quot; 
+[92mINFO [0m:      aggregate_train: Received 3 results and 0 failures
+[92mINFO [0m:      	└──&gt; Aggregated MetricRecord: {&#39;train_loss&#39;: 0.3082205645108318, &#39;val_f1&#39;: 0.9521418633602312, &#39;val_roc_auc&#39;: 0.9924786511964521, &#39;val_auprc&#39;: 0.9858760214269302, &#39;val_false_positive_rate&#39;: 0.028597530393889112, &#39;val_false_negative_rate&#39;: 0.0342369910038108}
+[92mINFO [0m:      aggregate_evaluate: Received 3 results and 0 failures
+[92mINFO [0m:      	{ 1: { &#39;train_loss&#39;: &#39;3.0822e-01&#39;,
+Running: flwr run . global --stream --run-config &#39;level=&quot;global&quot; global-round=1 
+[92mINFO [0m:      aggregate_train: Received 2 results and 0 failures
+Latest global checkpoint: shared/checkpoints/global/round_1.pt
+Wrote hospital metrics to reports/metrics_summary.csv
+Wrote global summary to reports/metrics_summary_global.csv
+Wrote predictions to reports/predictions_hospital_eu_01.csv
+Wrote notebooks/04_flower_runtime_orchestration.ipynb
+run,model_kind,scope,weighted_f1,macro_f1,weighted_roc_auc,weighted_auprc,mean_false_positive_rate,worst_false_negative_rate,num_examples
+hierarchical_fl,hierarchical_global,global_summary,0.6685111358467536,0.8124927972337909,0.9841100537911857,0.8382307539491916,0.04457125977490039,0.22803380641046087,424614
+Wrote GitHub Pages site to docs
+</pre></div>
+</figure><h2>Result artifacts</h2><table><thead><tr><th>Artifact</th><th>What it proves</th></tr></thead><tbody><tr><td><code>shared/checkpoints/region_eu/round_1.pt</code></td><td>The EU regional Flower federation aggregated hospital updates.</td></tr><tr><td><code>shared/checkpoints/region_na/round_1.pt</code></td><td>The NA regional Flower federation aggregated hospital updates.</td></tr><tr><td><code>shared/checkpoints/global/round_1.pt</code></td><td>The global Flower federation aggregated gateway updates.</td></tr><tr><td><code>reports/metrics_summary_global.csv</code></td><td>The global checkpoint can be evaluated across hospital test splits.</td></tr><tr><td><code>reports/predictions_hospital_eu_01.csv</code></td><td>The trained checkpoint can be used for row-level inference.</td></tr></tbody></table><h2>Current global metrics</h2><figure class="chart"><figcaption>Latest global checkpoint evaluation summary</figcaption><svg viewBox="0 0 1040 260" role="img" aria-label="Global evaluation metrics"><text x="20" y="73" class="chart-label">weighted_f1</text><rect x="220" y="55" width="434" height="24" fill="#0f766e" /><text x="669" y="73" class="chart-label">0.669</text><text x="20" y="119" class="chart-label">macro_f1</text><rect x="220" y="101" width="528" height="24" fill="#0f766e" /><text x="763" y="119" class="chart-label">0.812</text><text x="20" y="165" class="chart-label">weighted_roc_auc</text><rect x="220" y="147" width="639" height="24" fill="#0f766e" /><text x="874" y="165" class="chart-label">0.984</text><text x="20" y="211" class="chart-label">weighted_auprc</text><rect x="220" y="193" width="544" height="24" fill="#0f766e" /><text x="779" y="211" class="chart-label">0.838</text></svg></figure><h2>Current prediction sample</h2><table><thead><tr><th>row</th><th>hospital</th><th>label</th><th>prob_attack</th><th>prediction</th><th>correct</th></tr></thead><tbody><tr><td>0</td><td>hospital_eu_01</td><td>0</td><td>0.0260</td><td>0</td><td>True</td></tr><tr><td>1</td><td>hospital_eu_01</td><td>1</td><td>0.9839</td><td>1</td><td>True</td></tr><tr><td>2</td><td>hospital_eu_01</td><td>0</td><td>0.0207</td><td>0</td><td>True</td></tr><tr><td>3</td><td>hospital_eu_01</td><td>0</td><td>0.0142</td><td>0</td><td>True</td></tr><tr><td>4</td><td>hospital_eu_01</td><td>1</td><td>0.9489</td><td>1</td><td>True</td></tr><tr><td>5</td><td>hospital_eu_01</td><td>0</td><td>0.0216</td><td>0</td><td>True</td></tr><tr><td>6</td><td>hospital_eu_01</td><td>1</td><td>0.9834</td><td>1</td><td>True</td></tr><tr><td>7</td><td>hospital_eu_01</td><td>0</td><td>0.0141</td><td>0</td><td>True</td></tr><tr><td>8</td><td>hospital_eu_01</td><td>0</td><td>0.0140</td><td>0</td><td>True</td></tr><tr><td>9</td><td>hospital_eu_01</td><td>0</td><td>0.0232</td><td>0</td><td>True</td></tr><tr><td>10</td><td>hospital_eu_01</td><td>0</td><td>0.0144</td><td>0</td><td>True</td></tr><tr><td>11</td><td>hospital_eu_01</td><td>0</td><td>0.0576</td><td>0</td><td>True</td></tr><tr><td>12</td><td>hospital_eu_01</td><td>0</td><td>0.0173</td><td>0</td><td>True</td></tr><tr><td>13</td><td>hospital_eu_01</td><td>1</td><td>0.9567</td><td>1</td><td>True</td></tr><tr><td>14</td><td>hospital_eu_01</td><td>0</td><td>0.0751</td><td>0</td><td>True</td></tr></tbody></table><aside class="lab-card"><strong>Hands-on lab: rendered runtime evidence</strong><p>This lab is the rendered notebook view of the same runtime evidence: services, logs, checkpoint metadata, summary metrics, and raw-data boundary checks.</p><a href="../renders/04_flower_runtime_orchestration.html">Open lab render</a></aside><div class="pager"><a href="08-evaluation-privacy.html">Previous: 08 - Evaluation, privacy, and next steps</a><span></span></div>
+    </main>
+  </div>
+</body>
+</html>

@@ -23,209 +23,494 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="active" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>08 - Evaluation, privacy, and next steps</h1><p>How the result is measured and which limitations should remain explicit.</p></section><h2>Metrics</h2><p>Accuracy is not enough because intrusion detection datasets are often imbalanced. Evaluation reports F1, ROC-AUC, AUPRC, false-positive rate, and false-negative rate.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/metrics.py#L17-L74">hfl_cicids/metrics.py:17-74</a></figcaption><pre><code>  17  def safe_auc(y_true: np.ndarray, y_score: np.ndarray) -&gt; float:
-  18      if len(np.unique(y_true)) &lt; 2:
-  19          return 0.0
-  20      return float(roc_auc_score(y_true, y_score))
-  21  
-  22  
-  23  def safe_auprc(y_true: np.ndarray, y_score: np.ndarray) -&gt; float:
-  24      if len(np.unique(y_true)) &lt; 2:
-  25          return 0.0
-  26      return float(average_precision_score(y_true, y_score))
-  27  
-  28  
-  29  def false_rates(y_true: np.ndarray, y_pred: np.ndarray) -&gt; tuple[float, float]:
-  30      labels = [0, 1]
-  31      tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=labels).ravel()
-  32      fpr = fp / max(1, fp + tn)
-  33      fnr = fn / max(1, fn + tp)
-  34      return float(fpr), float(fnr)
-  35  
-  36  
-  37  @torch.no_grad()
-  38  def evaluate_binary_classifier(
-  39      model: torch.nn.Module,
-  40      loader: torch.utils.data.DataLoader,
-  41      device: torch.device,
-  42      threshold: float = 0.5,
-  43  ) -&gt; dict[str, float]:
-  44      model.to(device)
-  45      model.eval()
-  46  
-  47      all_probs = []
-  48      all_labels = []
-  49  
-  50      for x, y in loader:
-  51          x = x.to(device)
-  52          logits = model(x)
-  53          probs = torch.sigmoid(logits).detach().cpu().numpy()
-  54  
-  55          all_probs.append(probs)
-  56          all_labels.append(y.numpy())
-  57  
-  58      y_score = np.concatenate(all_probs)
-  59      y_true = np.concatenate(all_labels).astype(int)
-  60      y_pred = (y_score &gt;= threshold).astype(int)
-  61      fpr, fnr = false_rates(y_true, y_pred)
-  62  
-  63      return {
-  64          &quot;eval_acc&quot;: float(accuracy_score(y_true, y_pred)),
-  65          &quot;eval_balanced_acc&quot;: float(balanced_accuracy_score(y_true, y_pred)),
-  66          &quot;eval_precision&quot;: float(precision_score(y_true, y_pred, zero_division=0)),
-  67          &quot;eval_recall&quot;: float(recall_score(y_true, y_pred, zero_division=0)),
-  68          &quot;eval_f1&quot;: float(f1_score(y_true, y_pred, zero_division=0)),
-  69          &quot;eval_roc_auc&quot;: safe_auc(y_true, y_score),
-  70          &quot;eval_auprc&quot;: safe_auprc(y_true, y_score),
-  71          &quot;eval_false_positive_rate&quot;: fpr,
-  72          &quot;eval_false_negative_rate&quot;: fnr,
-  73          &quot;num-examples&quot;: int(len(y_true)),
-  74      }</code></pre></figure><h2>Evaluate checkpoints</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/evaluate_global_model.py#L31-L91">scripts/evaluate_global_model.py:31-91</a></figcaption><pre><code>  31  def _evaluate_checkpoint(
-  32      checkpoint: Path,
-  33      partitions_dir: Path,
-  34      batch_size: int,
-  35      split: str,
-  36      run_name: str,
-  37      model_kind: str,
-  38  ) -&gt; list[dict]:
-  39      if not checkpoint.exists():
-  40          console.print(f&quot;[yellow]Skipping missing checkpoint: {checkpoint}[/yellow]&quot;)
-  41          return []
-  42  
-  43      first_dir = partitions_dir / HOSPITALS[0].hospital_id
-  44      input_dim = infer_input_dim(first_dir)
-  45      model = TabularIDSNet(input_dim=input_dim)
-  46      model.load_state_dict(torch.load(checkpoint, map_location=&quot;cpu&quot;, weights_only=True))
-  47  
-  48      rows = []
-  49      for hospital in HOSPITALS:
-  50          data_dir = partitions_dir / hospital.hospital_id
-  51          if not data_dir.exists():
-  52              console.print(f&quot;[yellow]Skipping missing partition: {data_dir}[/yellow]&quot;)
-  53              continue
-  54          _, val_loader, test_loader = load_dataloaders(data_dir, batch_size)
-  55          loader = test_loader if split == &quot;test&quot; else val_loader
-  56          metrics = evaluate_binary_classifier(model, loader, _device())
-  57          rows.append(
-  58              {
-  59                  &quot;run&quot;: run_name,
-  60                  &quot;model_kind&quot;: model_kind,
-  61                  &quot;checkpoint&quot;: str(checkpoint),
-  62                  &quot;hospital_id&quot;: hospital.hospital_id,
-  63                  &quot;region&quot;: hospital.region,
-  64                  **metrics,
-  65              }
-  66          )
-  67      return rows
-  68  
-  69  
-  70  def _summary(rows: list[dict]) -&gt; pd.DataFrame:
-  71      if not rows:
-  72          return pd.DataFrame()
-  73      df = pd.DataFrame(rows)
-  74      summaries = []
-  75      for (run, model_kind), group in df.groupby([&quot;run&quot;, &quot;model_kind&quot;]):
-  76          weights = group[&quot;num-examples&quot;].to_numpy(dtype=float)
-  77          summaries.append(
-  78              {
-  79                  &quot;run&quot;: run,
-  80                  &quot;model_kind&quot;: model_kind,
-  81                  &quot;scope&quot;: &quot;global_summary&quot;,
-  82                  &quot;weighted_f1&quot;: float(np.average(group[&quot;eval_f1&quot;], weights=weights)),
-  83                  &quot;macro_f1&quot;: float(group[&quot;eval_f1&quot;].mean()),
-  84                  &quot;weighted_roc_auc&quot;: float(np.average(group[&quot;eval_roc_auc&quot;], weights=weights)),
-  85                  &quot;weighted_auprc&quot;: float(np.average(group[&quot;eval_auprc&quot;], weights=weights)),
-  86                  &quot;mean_false_positive_rate&quot;: float(group[&quot;eval_false_positive_rate&quot;].mean()),
-  87                  &quot;worst_false_negative_rate&quot;: float(group[&quot;eval_false_negative_rate&quot;].max()),
-  88                  &quot;num_examples&quot;: int(group[&quot;num-examples&quot;].sum()),
-  89              }
-  90          )
-  91      return pd.DataFrame(summaries)</code></pre></figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/evaluate_global_model.py#L94-L176">scripts/evaluate_global_model.py:94-176</a></figcaption><pre><code>  94  @app.command()
-  95  def main(
-  96      checkpoint: Path = typer.Option(
-  97          Path(&quot;shared/checkpoints/global/round_3.pt&quot;),
-  98          &quot;--checkpoint&quot;,
-  99          &quot;-c&quot;,
- 100          help=&quot;Hierarchical global checkpoint to evaluate.&quot;,
- 101      ),
- 102      partitions_dir: Path = typer.Option(DEFAULT_PARTITIONS_DIR, &quot;--partitions-dir&quot;),
- 103      output: Path = typer.Option(
- 104          Path(&quot;reports/metrics_summary.csv&quot;),
- 105          &quot;--output&quot;,
- 106          &quot;-o&quot;,
- 107          help=&quot;Metrics CSV output.&quot;,
- 108      ),
- 109      batch_size: int = typer.Option(4096, &quot;--batch-size&quot;),
- 110      split: str = typer.Option(&quot;test&quot;, &quot;--split&quot;, help=&quot;val or test.&quot;),
- 111      flat_checkpoint: Path | None = typer.Option(
- 112          None,
- 113          &quot;--flat-checkpoint&quot;,
- 114          help=&quot;Optional flat FL checkpoint for comparison.&quot;,
- 115      ),
- 116      local_checkpoints_dir: Path | None = typer.Option(
- 117          None,
- 118          &quot;--local-checkpoints-dir&quot;,
- 119          help=&quot;Optional directory with &lt;hospital_id&gt;.pt local-only checkpoints.&quot;,
- 120      ),
- 121  ) -&gt; None:
- 122      &quot;&quot;&quot;Evaluate global, optional flat, and optional local-only checkpoints.&quot;&quot;&quot;
- 123  
- 124      rows = _evaluate_checkpoint(
- 125          checkpoint=checkpoint,
- 126          partitions_dir=partitions_dir,
- 127          batch_size=batch_size,
- 128          split=split,
- 129          run_name=&quot;hierarchical_fl&quot;,
- 130          model_kind=&quot;hierarchical_global&quot;,
- 131      )
- 132  
- 133      if flat_checkpoint is not None:
- 134          rows.extend(
- 135              _evaluate_checkpoint(
- 136                  checkpoint=flat_checkpoint,
- 137                  partitions_dir=partitions_dir,
- 138                  batch_size=batch_size,
- 139                  split=split,
- 140                  run_name=&quot;flat_fl&quot;,
- 141                  model_kind=&quot;flat_global&quot;,
- 142              )
- 143          )
- 144  
- 145      if local_checkpoints_dir is not None:
- 146          for hospital in HOSPITALS:
- 147              local_checkpoint = local_checkpoints_dir / f&quot;{hospital.hospital_id}.pt&quot;
- 148              local_rows = _evaluate_checkpoint(
- 149                  checkpoint=local_checkpoint,
- 150                  partitions_dir=partitions_dir,
- 151                  batch_size=batch_size,
- 152                  split=split,
- 153                  run_name=&quot;local_only&quot;,
- 154                  model_kind=hospital.hospital_id,
- 155              )
- 156              rows.extend([row for row in local_rows if row[&quot;hospital_id&quot;] == hospital.hospital_id])
- 157  
- 158      if not rows:
- 159          raise FileNotFoundError(&quot;No checkpoints could be evaluated&quot;)
- 160  
- 161      detail = pd.DataFrame(rows)
- 162      summary = _summary(rows)
- 163      output.parent.mkdir(parents=True, exist_ok=True)
- 164      detail.to_csv(output, index=False)
- 165      summary_output = output.with_name(f&quot;{output.stem}_global{output.suffix}&quot;)
- 166      summary.to_csv(summary_output, index=False)
- 167      metadata = {
- 168          &quot;detail_rows&quot;: int(len(detail)),
- 169          &quot;summary_rows&quot;: int(len(summary)),
- 170          &quot;split&quot;: split,
- 171          &quot;outputs&quot;: [str(output), str(summary_output)],
- 172      }
- 173      output.with_suffix(&quot;.metadata.json&quot;).write_text(json.dumps(metadata, indent=2, sort_keys=True))
- 174      console.print(f&quot;[green]Wrote hospital metrics to {output}[/green]&quot;)
- 175      console.print(f&quot;[green]Wrote global summary to {summary_output}[/green]&quot;)
- 176  </code></pre></figure><h2>Privacy</h2><ul><li>Raw data is not uploaded to <code>shared/</code> or to Git.</li><li>Hospitals mount <code>/data</code> read-only.</li><li>The gateway mounts checkpoints, not hospital partitions.</li><li>Model updates can still leak information. This is not differential privacy.</li></ul><h2>Reasonable extensions</h2><ul><li>TLS and SuperNode authentication.</li><li>Secure aggregation so the server cannot inspect individual updates.</li><li>Centralized XGBoost/LightGBM baseline for performance comparison.</li><li>Federated scaling statistics instead of the simulation's global scaler.</li></ul><div class="pager"><a href="07-orchestration.html">Previous: 07 - Orchestration, Docker, and logs</a><span></span></div>
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>08 - Evaluation, privacy, and next steps</h1><p>How the result is measured and which limitations should remain explicit.</p></section><h2>Metrics</h2><p>Accuracy is not enough because intrusion detection datasets are often imbalanced. Evaluation reports F1, ROC-AUC, AUPRC, false-positive rate, and false-negative rate.</p><figure class="chart"><figcaption>Latest global checkpoint evaluation summary</figcaption><svg viewBox="0 0 1040 260" role="img" aria-label="Global evaluation metrics"><text x="20" y="73" class="chart-label">weighted_f1</text><rect x="220" y="55" width="434" height="24" fill="#0f766e" /><text x="669" y="73" class="chart-label">0.669</text><text x="20" y="119" class="chart-label">macro_f1</text><rect x="220" y="101" width="528" height="24" fill="#0f766e" /><text x="763" y="119" class="chart-label">0.812</text><text x="20" y="165" class="chart-label">weighted_roc_auc</text><rect x="220" y="147" width="639" height="24" fill="#0f766e" /><text x="874" y="165" class="chart-label">0.984</text><text x="20" y="211" class="chart-label">weighted_auprc</text><rect x="220" y="193" width="544" height="24" fill="#0f766e" /><text x="779" y="211" class="chart-label">0.838</text></svg></figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/metrics.py#L17-L74">hfl_cicids/metrics.py:17-74</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">safe_auc</span><span class="p">(</span><span class="n">y_true</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">y_score</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">y_true</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_score</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">safe_auprc</span><span class="p">(</span><span class="n">y_true</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">y_score</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">y_true</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">average_precision_score</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_score</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">false_rates</span><span class="p">(</span><span class="n">y_true</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="n">tn</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">fn</span><span class="p">,</span> <span class="n">tp</span> <span class="o">=</span> <span class="n">confusion_matrix</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span>
+    <span class="n">fpr</span> <span class="o">=</span> <span class="n">fp</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">fp</span> <span class="o">+</span> <span class="n">tn</span><span class="p">)</span>
+    <span class="n">fnr</span> <span class="o">=</span> <span class="n">fn</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">fn</span> <span class="o">+</span> <span class="n">tp</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">fpr</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">fnr</span><span class="p">)</span>
+
+
+<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">evaluate_binary_classifier</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
+    <span class="n">loader</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">,</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+    <span class="n">threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+
+    <span class="n">all_probs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">all_labels</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">loader</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">probs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">logits</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+
+        <span class="n">all_probs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">probs</span><span class="p">)</span>
+        <span class="n">all_labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>
+
+    <span class="n">y_score</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">all_probs</span><span class="p">)</span>
+    <span class="n">y_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">all_labels</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">y_pred</span> <span class="o">=</span> <span class="p">(</span><span class="n">y_score</span> <span class="o">&gt;=</span> <span class="n">threshold</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">fpr</span><span class="p">,</span> <span class="n">fnr</span> <span class="o">=</span> <span class="n">false_rates</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;eval_acc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">)),</span>
+        <span class="s2">&quot;eval_balanced_acc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">balanced_accuracy_score</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">)),</span>
+        <span class="s2">&quot;eval_precision&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">precision_score</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">,</span> <span class="n">zero_division</span><span class="o">=</span><span class="mi">0</span><span class="p">)),</span>
+        <span class="s2">&quot;eval_recall&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">recall_score</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">,</span> <span class="n">zero_division</span><span class="o">=</span><span class="mi">0</span><span class="p">)),</span>
+        <span class="s2">&quot;eval_f1&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">f1_score</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">,</span> <span class="n">zero_division</span><span class="o">=</span><span class="mi">0</span><span class="p">)),</span>
+        <span class="s2">&quot;eval_roc_auc&quot;</span><span class="p">:</span> <span class="n">safe_auc</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_score</span><span class="p">),</span>
+        <span class="s2">&quot;eval_auprc&quot;</span><span class="p">:</span> <span class="n">safe_auprc</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">y_score</span><span class="p">),</span>
+        <span class="s2">&quot;eval_false_positive_rate&quot;</span><span class="p">:</span> <span class="n">fpr</span><span class="p">,</span>
+        <span class="s2">&quot;eval_false_negative_rate&quot;</span><span class="p">:</span> <span class="n">fnr</span><span class="p">,</span>
+        <span class="s2">&quot;num-examples&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">y_true</span><span class="p">)),</span>
+    <span class="p">}</span>
+</pre></div></td></tr></table></div>
+</figure><h2>Evaluate checkpoints</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/evaluate_global_model.py#L31-L91">scripts/evaluate_global_model.py:31-91</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_evaluate_checkpoint</span><span class="p">(</span>
+    <span class="n">checkpoint</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">partitions_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">split</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">run_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">model_kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[yellow]Skipping missing checkpoint: </span><span class="si">{</span><span class="n">checkpoint</span><span class="si">}</span><span class="s2">[/yellow]&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="n">first_dir</span> <span class="o">=</span> <span class="n">partitions_dir</span> <span class="o">/</span> <span class="n">HOSPITALS</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">hospital_id</span>
+    <span class="n">input_dim</span> <span class="o">=</span> <span class="n">infer_input_dim</span><span class="p">(</span><span class="n">first_dir</span><span class="p">)</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">TabularIDSNet</span><span class="p">(</span><span class="n">input_dim</span><span class="o">=</span><span class="n">input_dim</span><span class="p">)</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">hospital</span> <span class="ow">in</span> <span class="n">HOSPITALS</span><span class="p">:</span>
+        <span class="n">data_dir</span> <span class="o">=</span> <span class="n">partitions_dir</span> <span class="o">/</span> <span class="n">hospital</span><span class="o">.</span><span class="n">hospital_id</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">data_dir</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[yellow]Skipping missing partition: </span><span class="si">{</span><span class="n">data_dir</span><span class="si">}</span><span class="s2">[/yellow]&quot;</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">val_loader</span><span class="p">,</span> <span class="n">test_loader</span> <span class="o">=</span> <span class="n">load_dataloaders</span><span class="p">(</span><span class="n">data_dir</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">)</span>
+        <span class="n">loader</span> <span class="o">=</span> <span class="n">test_loader</span> <span class="k">if</span> <span class="n">split</span> <span class="o">==</span> <span class="s2">&quot;test&quot;</span> <span class="k">else</span> <span class="n">val_loader</span>
+        <span class="n">metrics</span> <span class="o">=</span> <span class="n">evaluate_binary_classifier</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">loader</span><span class="p">,</span> <span class="n">_device</span><span class="p">())</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;run&quot;</span><span class="p">:</span> <span class="n">run_name</span><span class="p">,</span>
+                <span class="s2">&quot;model_kind&quot;</span><span class="p">:</span> <span class="n">model_kind</span><span class="p">,</span>
+                <span class="s2">&quot;checkpoint&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">),</span>
+                <span class="s2">&quot;hospital_id&quot;</span><span class="p">:</span> <span class="n">hospital</span><span class="o">.</span><span class="n">hospital_id</span><span class="p">,</span>
+                <span class="s2">&quot;region&quot;</span><span class="p">:</span> <span class="n">hospital</span><span class="o">.</span><span class="n">region</span><span class="p">,</span>
+                <span class="o">**</span><span class="n">metrics</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">rows</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_summary</span><span class="p">(</span><span class="n">rows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+    <span class="n">summaries</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">run</span><span class="p">,</span> <span class="n">model_kind</span><span class="p">),</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s2">&quot;run&quot;</span><span class="p">,</span> <span class="s2">&quot;model_kind&quot;</span><span class="p">]):</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;num-examples&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="n">summaries</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;run&quot;</span><span class="p">:</span> <span class="n">run</span><span class="p">,</span>
+                <span class="s2">&quot;model_kind&quot;</span><span class="p">:</span> <span class="n">model_kind</span><span class="p">,</span>
+                <span class="s2">&quot;scope&quot;</span><span class="p">:</span> <span class="s2">&quot;global_summary&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;weighted_f1&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">average</span><span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;eval_f1&quot;</span><span class="p">],</span> <span class="n">weights</span><span class="o">=</span><span class="n">weights</span><span class="p">)),</span>
+                <span class="s2">&quot;macro_f1&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;eval_f1&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()),</span>
+                <span class="s2">&quot;weighted_roc_auc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">average</span><span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;eval_roc_auc&quot;</span><span class="p">],</span> <span class="n">weights</span><span class="o">=</span><span class="n">weights</span><span class="p">)),</span>
+                <span class="s2">&quot;weighted_auprc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">average</span><span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;eval_auprc&quot;</span><span class="p">],</span> <span class="n">weights</span><span class="o">=</span><span class="n">weights</span><span class="p">)),</span>
+                <span class="s2">&quot;mean_false_positive_rate&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;eval_false_positive_rate&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()),</span>
+                <span class="s2">&quot;worst_false_negative_rate&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;eval_false_negative_rate&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()),</span>
+                <span class="s2">&quot;num_examples&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;num-examples&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">summaries</span><span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/evaluate_global_model.py#L94-L176">scripts/evaluate_global_model.py:94-176</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span>
+<span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span></pre></div></td><td class="code"><div><pre><span></span><span class="nd">@app</span><span class="o">.</span><span class="n">command</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span>
+    <span class="n">checkpoint</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">typer</span><span class="o">.</span><span class="n">Option</span><span class="p">(</span>
+        <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;shared/checkpoints/global/round_3.pt&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;--checkpoint&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;-c&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Hierarchical global checkpoint to evaluate.&quot;</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">partitions_dir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">typer</span><span class="o">.</span><span class="n">Option</span><span class="p">(</span><span class="n">DEFAULT_PARTITIONS_DIR</span><span class="p">,</span> <span class="s2">&quot;--partitions-dir&quot;</span><span class="p">),</span>
+    <span class="n">output</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">typer</span><span class="o">.</span><span class="n">Option</span><span class="p">(</span>
+        <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;reports/metrics_summary.csv&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;--output&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;-o&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Metrics CSV output.&quot;</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">typer</span><span class="o">.</span><span class="n">Option</span><span class="p">(</span><span class="mi">4096</span><span class="p">,</span> <span class="s2">&quot;--batch-size&quot;</span><span class="p">),</span>
+    <span class="n">split</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">typer</span><span class="o">.</span><span class="n">Option</span><span class="p">(</span><span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="s2">&quot;--split&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;val or test.&quot;</span><span class="p">),</span>
+    <span class="n">flat_checkpoint</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">typer</span><span class="o">.</span><span class="n">Option</span><span class="p">(</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;--flat-checkpoint&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Optional flat FL checkpoint for comparison.&quot;</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">local_checkpoints_dir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">typer</span><span class="o">.</span><span class="n">Option</span><span class="p">(</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;--local-checkpoints-dir&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Optional directory with &lt;hospital_id&gt;.pt local-only checkpoints.&quot;</span><span class="p">,</span>
+    <span class="p">),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Evaluate global, optional flat, and optional local-only checkpoints.&quot;&quot;&quot;</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">_evaluate_checkpoint</span><span class="p">(</span>
+        <span class="n">checkpoint</span><span class="o">=</span><span class="n">checkpoint</span><span class="p">,</span>
+        <span class="n">partitions_dir</span><span class="o">=</span><span class="n">partitions_dir</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+        <span class="n">split</span><span class="o">=</span><span class="n">split</span><span class="p">,</span>
+        <span class="n">run_name</span><span class="o">=</span><span class="s2">&quot;hierarchical_fl&quot;</span><span class="p">,</span>
+        <span class="n">model_kind</span><span class="o">=</span><span class="s2">&quot;hierarchical_global&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">flat_checkpoint</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+            <span class="n">_evaluate_checkpoint</span><span class="p">(</span>
+                <span class="n">checkpoint</span><span class="o">=</span><span class="n">flat_checkpoint</span><span class="p">,</span>
+                <span class="n">partitions_dir</span><span class="o">=</span><span class="n">partitions_dir</span><span class="p">,</span>
+                <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+                <span class="n">split</span><span class="o">=</span><span class="n">split</span><span class="p">,</span>
+                <span class="n">run_name</span><span class="o">=</span><span class="s2">&quot;flat_fl&quot;</span><span class="p">,</span>
+                <span class="n">model_kind</span><span class="o">=</span><span class="s2">&quot;flat_global&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">local_checkpoints_dir</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">hospital</span> <span class="ow">in</span> <span class="n">HOSPITALS</span><span class="p">:</span>
+            <span class="n">local_checkpoint</span> <span class="o">=</span> <span class="n">local_checkpoints_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">hospital</span><span class="o">.</span><span class="n">hospital_id</span><span class="si">}</span><span class="s2">.pt&quot;</span>
+            <span class="n">local_rows</span> <span class="o">=</span> <span class="n">_evaluate_checkpoint</span><span class="p">(</span>
+                <span class="n">checkpoint</span><span class="o">=</span><span class="n">local_checkpoint</span><span class="p">,</span>
+                <span class="n">partitions_dir</span><span class="o">=</span><span class="n">partitions_dir</span><span class="p">,</span>
+                <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+                <span class="n">split</span><span class="o">=</span><span class="n">split</span><span class="p">,</span>
+                <span class="n">run_name</span><span class="o">=</span><span class="s2">&quot;local_only&quot;</span><span class="p">,</span>
+                <span class="n">model_kind</span><span class="o">=</span><span class="n">hospital</span><span class="o">.</span><span class="n">hospital_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">row</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">local_rows</span> <span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;hospital_id&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">hospital</span><span class="o">.</span><span class="n">hospital_id</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="s2">&quot;No checkpoints could be evaluated&quot;</span><span class="p">)</span>
+
+    <span class="n">detail</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+    <span class="n">summary</span> <span class="o">=</span> <span class="n">_summary</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+    <span class="n">output</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">detail</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">summary_output</span> <span class="o">=</span> <span class="n">output</span><span class="o">.</span><span class="n">with_name</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">output</span><span class="o">.</span><span class="n">stem</span><span class="si">}</span><span class="s2">_global</span><span class="si">{</span><span class="n">output</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">summary</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">summary_output</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;detail_rows&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">detail</span><span class="p">)),</span>
+        <span class="s2">&quot;summary_rows&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">summary</span><span class="p">)),</span>
+        <span class="s2">&quot;split&quot;</span><span class="p">:</span> <span class="n">split</span><span class="p">,</span>
+        <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">output</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">summary_output</span><span class="p">)],</span>
+    <span class="p">}</span>
+    <span class="n">output</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;.metadata.json&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">metadata</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+    <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[green]Wrote hospital metrics to </span><span class="si">{</span><span class="n">output</span><span class="si">}</span><span class="s2">[/green]&quot;</span><span class="p">)</span>
+    <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[green]Wrote global summary to </span><span class="si">{</span><span class="n">summary_output</span><span class="si">}</span><span class="s2">[/green]&quot;</span><span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/evaluate_global_model.py#L31-L67">Lines 31-67</a> load one checkpoint and evaluate it separately on every hospital split.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/evaluate_global_model.py#L70-L91">Lines 70-91</a> reduce per-hospital rows into weighted and macro summaries.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/evaluate_global_model.py#L161-L166">Lines 161-166</a> write both detailed hospital metrics and a global summary CSV.</li></ul></div><h2>Prediction from a trained checkpoint</h2><p>Evaluation summarizes a checkpoint over many rows. Prediction is the smaller inference path: load one checkpoint, take rows from one hospital split, compute <code>sigmoid(logit)</code>, threshold it, and write row-level predictions.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/predict_with_checkpoint.py#L25-L65">scripts/predict_with_checkpoint.py:25-65</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span></pre></div></td><td class="code"><div><pre><span></span><span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">predict_split</span><span class="p">(</span>
+    <span class="n">checkpoint</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">hospital_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">partitions_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">split</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">threshold</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load a global checkpoint and produce row-level predictions for one hospital split.&quot;&quot;&quot;</span>
+
+    <span class="n">data_dir</span> <span class="o">=</span> <span class="n">partitions_dir</span> <span class="o">/</span> <span class="n">hospital_id</span>
+    <span class="n">split_path</span> <span class="o">=</span> <span class="n">data_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">split</span><span class="si">}</span><span class="s2">.parquet&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">split_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Split not found: </span><span class="si">{</span><span class="n">split_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Checkpoint not found: </span><span class="si">{</span><span class="n">checkpoint</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">split_path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">&quot;label&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&#39;label&#39; column missing from </span><span class="si">{</span><span class="n">split_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">input_dim</span> <span class="o">=</span> <span class="n">infer_input_dim</span><span class="p">(</span><span class="n">data_dir</span><span class="p">)</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">TabularIDSNet</span><span class="p">(</span><span class="n">input_dim</span><span class="o">=</span><span class="n">input_dim</span><span class="p">)</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+
+    <span class="n">sample</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">limit</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">sample</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;float32&quot;</span><span class="p">))</span>
+    <span class="n">probs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">))</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="n">sample</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+    <span class="n">preds</span> <span class="o">=</span> <span class="p">(</span><span class="n">probs</span> <span class="o">&gt;=</span> <span class="n">threshold</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;row_index&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">sample</span><span class="p">))),</span>
+            <span class="s2">&quot;hospital_id&quot;</span><span class="p">:</span> <span class="n">hospital_id</span><span class="p">,</span>
+            <span class="s2">&quot;split&quot;</span><span class="p">:</span> <span class="n">split</span><span class="p">,</span>
+            <span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="n">labels</span><span class="p">,</span>
+            <span class="s2">&quot;prob_attack&quot;</span><span class="p">:</span> <span class="n">probs</span><span class="p">,</span>
+            <span class="s2">&quot;prediction&quot;</span><span class="p">:</span> <span class="n">preds</span><span class="p">,</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/predict_with_checkpoint.py#L31-L38">Lines 31-38</a> enforce that both the checkpoint and selected hospital split exist.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/predict_with_checkpoint.py#L44-L48">Lines 44-48</a> rebuild the same MLP architecture and load the trained checkpoint weights.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/predict_with_checkpoint.py#L50-L53">Lines 50-53</a> compute attack probabilities with a sigmoid and convert them to binary predictions.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/predict_with_checkpoint.py#L55-L65">Lines 55-65</a> return a human-readable table with probability, prediction, label, and correctness.</li></ul></div><table><thead><tr><th>row</th><th>hospital</th><th>label</th><th>prob_attack</th><th>prediction</th><th>correct</th></tr></thead><tbody><tr><td>0</td><td>hospital_eu_01</td><td>0</td><td>0.0260</td><td>0</td><td>True</td></tr><tr><td>1</td><td>hospital_eu_01</td><td>1</td><td>0.9839</td><td>1</td><td>True</td></tr><tr><td>2</td><td>hospital_eu_01</td><td>0</td><td>0.0207</td><td>0</td><td>True</td></tr><tr><td>3</td><td>hospital_eu_01</td><td>0</td><td>0.0142</td><td>0</td><td>True</td></tr><tr><td>4</td><td>hospital_eu_01</td><td>1</td><td>0.9489</td><td>1</td><td>True</td></tr><tr><td>5</td><td>hospital_eu_01</td><td>0</td><td>0.0216</td><td>0</td><td>True</td></tr><tr><td>6</td><td>hospital_eu_01</td><td>1</td><td>0.9834</td><td>1</td><td>True</td></tr><tr><td>7</td><td>hospital_eu_01</td><td>0</td><td>0.0141</td><td>0</td><td>True</td></tr><tr><td>8</td><td>hospital_eu_01</td><td>0</td><td>0.0140</td><td>0</td><td>True</td></tr><tr><td>9</td><td>hospital_eu_01</td><td>0</td><td>0.0232</td><td>0</td><td>True</td></tr><tr><td>10</td><td>hospital_eu_01</td><td>0</td><td>0.0144</td><td>0</td><td>True</td></tr><tr><td>11</td><td>hospital_eu_01</td><td>0</td><td>0.0576</td><td>0</td><td>True</td></tr></tbody></table><h2>Privacy</h2><ul><li>Raw data is not uploaded to <code>shared/</code> or to Git.</li><li>Hospitals mount <code>/data</code> read-only.</li><li>The gateway mounts checkpoints, not hospital partitions.</li><li>Model updates can still leak information. This is not differential privacy.</li></ul><h2>Reasonable extensions</h2><ul><li>TLS and SuperNode authentication.</li><li>Secure aggregation so the server cannot inspect individual updates.</li><li>Centralized XGBoost/LightGBM baseline for performance comparison.</li><li>Federated scaling statistics instead of the simulation's global scaler.</li></ul><div class="pager"><a href="07-orchestration.html">Previous: 07 - Orchestration, Docker, and logs</a><span></span><a href="09-end-to-end-demo.html">Next: 09 - End-to-end demo outputs</a></div>
     </main>
   </div>
 </body>

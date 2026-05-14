@@ -23,104 +23,204 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</h1><p>What each Flower Deployment Runtime component does and how it connects in Docker.</p></section><h2>Roles</h2><table><thead><tr><th>Component</th><th>In this demo</th></tr></thead><tbody><tr><td>SuperLink</td><td>The hub of one federation. There is one per region and one global hub.</td></tr><tr><td>SuperNode</td><td>A client connected to a SuperLink. It can be a hospital or a gateway.</td></tr><tr><td>SuperExec ServerApp</td><td>The process that executes <code>hfl_cicids.server_app</code>.</td></tr><tr><td>SuperExec ClientApp</td><td>The process that executes <code>hfl_cicids.client_app</code> next to a SuperNode.</td></tr></tbody></table><h2>SuperLink and ServerApp</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L43-L71">scripts/generate_compose.py:43-71</a></figcaption><pre><code>  43  def _superlink(name: str, port: int) -&gt; str:
-  44      return f&quot;&quot;&quot;\
-  45    {name}-superlink:
-  46      image: flwr/superlink:${{FLWR_VERSION:-1.29.0}}
-  47      command:
-  48        - --insecure
-  49        - --isolation
-  50        - process
-  51      ports:
-  52        - \&quot;{port}:9093\&quot;
-  53  &quot;&quot;&quot;
-  54  
-  55  
-  56  def _serverexec(name: str) -&gt; str:
-  57      return f&quot;&quot;&quot;\
-  58    {name}-superexec-serverapp:
-  59      build:
-  60  {SERVERAPP_BUILD.rstrip()}
-  61      command:
-  62        - --insecure
-  63        - --plugin-type
-  64        - serverapp
-  65        - --appio-api-address
-  66        - {name}-superlink:9091
-  67      volumes:
-  68        - ./shared:/shared
-  69      depends_on:
-  70        - {name}-superlink
-  71  &quot;&quot;&quot;</code></pre></figure><h2>Hospital SuperNode</h2><p>The hospital connects to its regional SuperLink, and its ClientApp mounts only its own local folder at <code>/data:ro</code>.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L74-L107">scripts/generate_compose.py:74-107</a></figcaption><pre><code>  74  def _hospital_supernode(hospital_id: str, region: str) -&gt; str:
-  75      service = hospital_id.replace(&quot;_&quot;, &quot;-&quot;)
-  76      region_service = region.replace(&quot;_&quot;, &quot;-&quot;)
-  77      return f&quot;&quot;&quot;\
-  78    {service}-supernode:
-  79      image: flwr/supernode:${{FLWR_VERSION:-1.29.0}}
-  80      command:
-  81        - --insecure
-  82        - --superlink
-  83        - {region_service}-superlink:9092
-  84        - --clientappio-api-address
-  85        - 0.0.0.0:9094
-  86        - --isolation
-  87        - process
-  88        - --node-config
-  89        - &#x27;role=\&quot;hospital\&quot; region=\&quot;{region}\&quot; hospital-id=\&quot;{hospital_id}\&quot; data-dir=\&quot;/data\&quot;&#x27;
-  90      depends_on:
-  91        - {region_service}-superlink
-  92  
-  93    {service}-superexec-clientapp:
-  94      build:
-  95  {CLIENTAPP_BUILD.rstrip()}
-  96      command:
-  97        - --insecure
-  98        - --plugin-type
-  99        - clientapp
- 100        - --appio-api-address
- 101        - {service}-supernode:9094
- 102      volumes:
- 103        - ./data/partitions/{hospital_id}:/data:ro
- 104        - ./shared:/shared
- 105      depends_on:
- 106        - {service}-supernode
- 107  &quot;&quot;&quot;</code></pre></figure><h2>RegionGateway SuperNode</h2><p>The gateway connects to the global SuperLink and mounts <code>/shared</code>, not <code>/data</code>. This lets it return regional checkpoints without reading raw rows.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L110-L143">scripts/generate_compose.py:110-143</a></figcaption><pre><code> 110  def _gateway_supernode(region: str) -&gt; str:
- 111      service = region.replace(&quot;_&quot;, &quot;-&quot;)
- 112      return f&quot;&quot;&quot;\
- 113    {service}-gateway-supernode:
- 114      image: flwr/supernode:${{FLWR_VERSION:-1.29.0}}
- 115      command:
- 116        - --insecure
- 117        - --superlink
- 118        - global-superlink:9092
- 119        - --clientappio-api-address
- 120        - 0.0.0.0:9094
- 121        - --isolation
- 122        - process
- 123        - --node-config
- 124        - &#x27;role=\&quot;region-gateway\&quot; region=\&quot;{region}\&quot; checkpoint-root=\&quot;/shared/checkpoints\&quot;&#x27;
- 125      volumes:
- 126        - ./shared:/shared
- 127      depends_on:
- 128        - global-superlink
- 129  
- 130    {service}-gateway-superexec-clientapp:
- 131      build:
- 132  {CLIENTAPP_BUILD.rstrip()}
- 133      command:
- 134        - --insecure
- 135        - --plugin-type
- 136        - clientapp
- 137        - --appio-api-address
- 138        - {service}-gateway-supernode:9094
- 139      volumes:
- 140        - ./shared:/shared
- 141      depends_on:
- 142        - {service}-gateway-supernode
- 143  &quot;&quot;&quot;</code></pre></figure><h2>Real render</h2><p>The rendered notebook shows running containers and message logs. <a href="../renders/04_flower_runtime_orchestration.html">Open notebook 04 HTML render</a>.</p><div class="pager"><a href="02-data-pipeline.html">Previous: 02 - Reproducible data pipeline</a><span></span><a href="04-model-clientapp.html">Next: 04 - Model and hospital ClientApp</a></div>
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</h1><p>What each Flower Deployment Runtime component does and how it connects in Docker.</p></section><h2>Roles</h2><table><thead><tr><th>Component</th><th>In this demo</th></tr></thead><tbody><tr><td>SuperLink</td><td>The hub of one federation. There is one per region and one global hub.</td></tr><tr><td>SuperNode</td><td>A client connected to a SuperLink. It can be a hospital or a gateway.</td></tr><tr><td>SuperExec ServerApp</td><td>The process that executes <code>hfl_cicids.server_app</code>.</td></tr><tr><td>SuperExec ClientApp</td><td>The process that executes <code>hfl_cicids.client_app</code> next to a SuperNode.</td></tr></tbody></table><h2>SuperLink and ServerApp</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L43-L71">scripts/generate_compose.py:43-71</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_superlink</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">port</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">  </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">-superlink:</span>
+<span class="s2">    image: flwr/superlink:$</span><span class="se">{{</span><span class="s2">FLWR_VERSION:-1.29.0</span><span class="se">}}</span>
+<span class="s2">    command:</span>
+<span class="s2">      - --insecure</span>
+<span class="s2">      - --isolation</span>
+<span class="s2">      - process</span>
+<span class="s2">    ports:</span>
+<span class="s2">      - </span><span class="se">\&quot;</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">:9093</span><span class="se">\&quot;</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_serverexec</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">  </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">-superexec-serverapp:</span>
+<span class="s2">    build:</span>
+<span class="si">{</span><span class="n">SERVERAPP_BUILD</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">    command:</span>
+<span class="s2">      - --insecure</span>
+<span class="s2">      - --plugin-type</span>
+<span class="s2">      - serverapp</span>
+<span class="s2">      - --appio-api-address</span>
+<span class="s2">      - </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">-superlink:9091</span>
+<span class="s2">    volumes:</span>
+<span class="s2">      - ./shared:/shared</span>
+<span class="s2">    depends_on:</span>
+<span class="s2">      - </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">-superlink</span>
+<span class="s2">&quot;&quot;&quot;</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L43-L52">Lines 43-52</a> create one SuperLink service and expose the Control API port to the host.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L56-L70">Lines 56-70</a> create the ServerApp SuperExec. It connects to the generated SuperLink AppIO API, for example <code>region-eu-superlink:9091</code>.</li><li>The SuperLink is the coordination hub; the ServerApp SuperExec is the worker process that actually runs the application code submitted by <code>flwr run</code>.</li></ul></div><h2>Hospital SuperNode</h2><p>The hospital connects to its regional SuperLink, and its ClientApp mounts only its own local folder at <code>/data:ro</code>.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L74-L107">scripts/generate_compose.py:74-107</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_hospital_supernode</span><span class="p">(</span><span class="n">hospital_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">region</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">service</span> <span class="o">=</span> <span class="n">hospital_id</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">)</span>
+    <span class="n">region_service</span> <span class="o">=</span> <span class="n">region</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">  </span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">-supernode:</span>
+<span class="s2">    image: flwr/supernode:$</span><span class="se">{{</span><span class="s2">FLWR_VERSION:-1.29.0</span><span class="se">}}</span>
+<span class="s2">    command:</span>
+<span class="s2">      - --insecure</span>
+<span class="s2">      - --superlink</span>
+<span class="s2">      - </span><span class="si">{</span><span class="n">region_service</span><span class="si">}</span><span class="s2">-superlink:9092</span>
+<span class="s2">      - --clientappio-api-address</span>
+<span class="s2">      - 0.0.0.0:9094</span>
+<span class="s2">      - --isolation</span>
+<span class="s2">      - process</span>
+<span class="s2">      - --node-config</span>
+<span class="s2">      - &#39;role=</span><span class="se">\&quot;</span><span class="s2">hospital</span><span class="se">\&quot;</span><span class="s2"> region=</span><span class="se">\&quot;</span><span class="si">{</span><span class="n">region</span><span class="si">}</span><span class="se">\&quot;</span><span class="s2"> hospital-id=</span><span class="se">\&quot;</span><span class="si">{</span><span class="n">hospital_id</span><span class="si">}</span><span class="se">\&quot;</span><span class="s2"> data-dir=</span><span class="se">\&quot;</span><span class="s2">/data</span><span class="se">\&quot;</span><span class="s2">&#39;</span>
+<span class="s2">    depends_on:</span>
+<span class="s2">      - </span><span class="si">{</span><span class="n">region_service</span><span class="si">}</span><span class="s2">-superlink</span>
+
+<span class="s2">  </span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">-superexec-clientapp:</span>
+<span class="s2">    build:</span>
+<span class="si">{</span><span class="n">CLIENTAPP_BUILD</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">    command:</span>
+<span class="s2">      - --insecure</span>
+<span class="s2">      - --plugin-type</span>
+<span class="s2">      - clientapp</span>
+<span class="s2">      - --appio-api-address</span>
+<span class="s2">      - </span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">-supernode:9094</span>
+<span class="s2">    volumes:</span>
+<span class="s2">      - ./data/partitions/</span><span class="si">{</span><span class="n">hospital_id</span><span class="si">}</span><span class="s2">:/data:ro</span>
+<span class="s2">      - ./shared:/shared</span>
+<span class="s2">    depends_on:</span>
+<span class="s2">      - </span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">-supernode</span>
+<span class="s2">&quot;&quot;&quot;</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L78-L89">Lines 78-89</a> start a hospital SuperNode and point it to the regional SuperLink Fleet API.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L88-L89">Lines 88-89</a> pass node config into Flower. The ClientApp later reads <code>role</code>, <code>region</code>, <code>hospital-id</code>, and <code>data-dir</code> from this config.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L93-L104">Lines 93-104</a> start the ClientApp SuperExec and mount only this hospital's partition at <code>/data:ro</code>.</li><li>Because each hospital service gets a different host folder mounted into <code>/data</code>, the ClientApp code can be shared while the data boundary remains per-hospital.</li></ul></div><h2>RegionGateway SuperNode</h2><p>The gateway connects to the global SuperLink and mounts <code>/shared</code>, not <code>/data</code>. This lets it return regional checkpoints without reading raw rows.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L110-L143">scripts/generate_compose.py:110-143</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_gateway_supernode</span><span class="p">(</span><span class="n">region</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">service</span> <span class="o">=</span> <span class="n">region</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">  </span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">-gateway-supernode:</span>
+<span class="s2">    image: flwr/supernode:$</span><span class="se">{{</span><span class="s2">FLWR_VERSION:-1.29.0</span><span class="se">}}</span>
+<span class="s2">    command:</span>
+<span class="s2">      - --insecure</span>
+<span class="s2">      - --superlink</span>
+<span class="s2">      - global-superlink:9092</span>
+<span class="s2">      - --clientappio-api-address</span>
+<span class="s2">      - 0.0.0.0:9094</span>
+<span class="s2">      - --isolation</span>
+<span class="s2">      - process</span>
+<span class="s2">      - --node-config</span>
+<span class="s2">      - &#39;role=</span><span class="se">\&quot;</span><span class="s2">region-gateway</span><span class="se">\&quot;</span><span class="s2"> region=</span><span class="se">\&quot;</span><span class="si">{</span><span class="n">region</span><span class="si">}</span><span class="se">\&quot;</span><span class="s2"> checkpoint-root=</span><span class="se">\&quot;</span><span class="s2">/shared/checkpoints</span><span class="se">\&quot;</span><span class="s2">&#39;</span>
+<span class="s2">    volumes:</span>
+<span class="s2">      - ./shared:/shared</span>
+<span class="s2">    depends_on:</span>
+<span class="s2">      - global-superlink</span>
+
+<span class="s2">  </span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">-gateway-superexec-clientapp:</span>
+<span class="s2">    build:</span>
+<span class="si">{</span><span class="n">CLIENTAPP_BUILD</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span><span class="si">}</span>
+<span class="s2">    command:</span>
+<span class="s2">      - --insecure</span>
+<span class="s2">      - --plugin-type</span>
+<span class="s2">      - clientapp</span>
+<span class="s2">      - --appio-api-address</span>
+<span class="s2">      - </span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">-gateway-supernode:9094</span>
+<span class="s2">    volumes:</span>
+<span class="s2">      - ./shared:/shared</span>
+<span class="s2">    depends_on:</span>
+<span class="s2">      - </span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">-gateway-supernode</span>
+<span class="s2">&quot;&quot;&quot;</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L113-L124">Lines 113-124</a> define a gateway SuperNode connected to <code>global-superlink:9092</code>, not to a regional SuperLink.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L123-L124">Lines 123-124</a> mark the node as <code>role="region-gateway"</code>, which switches the ClientApp into gateway behavior.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/scripts/generate_compose.py#L125-L140">Lines 125-140</a> mount <code>./shared:/shared</code> only. There is no hospital <code>/data</code> mount for a gateway.</li><li>This is the privacy boundary that makes the global layer see regional models rather than raw local rows.</li></ul></div><h2>Real render</h2><p>The runtime lab is linked from the end-to-end demo chapter. It is useful after you understand the roles above because it shows the running services, Flower profiles, checkpoint metadata, and message logs from the actual containers.</p><aside class="lab-card"><strong>Hands-on lab: runtime logs and container state</strong><p>Use this lab to inspect <code>docker compose ps</code>, Flower profiles, gateway logs, regional checkpoint metadata, and global evaluation output.</p><a href="../renders/04_flower_runtime_orchestration.html">Open lab render</a></aside><div class="pager"><a href="02-data-pipeline.html">Previous: 02 - Reproducible data pipeline</a><span></span><a href="04-model-clientapp.html">Next: 04 - Model and hospital ClientApp</a></div>
     </main>
   </div>
 </body>

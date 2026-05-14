@@ -23,53 +23,69 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
       <section class="hero"><p class="eyebrow">Handbook</p><h1>Render: 00_dataset_and_partitioning</h1><p>HTML render generated from 00_dataset_and_partitioning.ipynb.</p></section><p><a href="../index.html">Back to handbook</a></p><h1>00 - Dataset and Partitioning</h1>
 <p>This notebook explains the reproducible data pipeline for `hospital-ids-hfl`.</p>
 <p>The dataset is CIC-IDS2017 network-flow data. We treat labels as binary intrusion-detection labels:</p>
 <ul><li>`0`: benign network flow</li><li>`1`: malicious / attack network flow</li></ul>
-<p>The notebooks and scripts simulate hospital ownership after partitioning. The initial Kaggle download and central cleaning step are only used to create the simulated local hospital datasets.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><pre><code>from pathlib import Path
+<p>The notebooks and scripts simulate hospital ownership after partitioning. The initial Kaggle download and central cleaning step are only used to create the simulated local hospital datasets.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
 import os
 
-root = Path.cwd().parent if Path.cwd().name == &#x27;notebooks&#x27; else Path.cwd()
+root = Path.cwd().parent if Path.cwd().name == &#39;notebooks&#39; else Path.cwd()
 os.chdir(root)
-root</code></pre></figure></section><h2>1. Download</h2>
+root
+</pre></div>
+</figure></section><h2>1. Download</h2>
 <p>Kaggle credentials should be provided outside the repository, for example with `KAGGLE_API_TOKEN` or `~/.kaggle/kaggle.json`. No credential file is stored in this project.</p>
-<p>The command below downloads the public Kaggle mirror into `data/raw/`, which is ignored by Git.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><pre><code># Run only if data/raw does not already contain the CIC-IDS2017 CSVs.
-# !python scripts/download_kaggle.py</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><pre><code>raw_csvs = sorted(Path(&#x27;data/raw&#x27;).glob(&#x27;*.csv&#x27;))
-len(raw_csvs), [p.name for p in raw_csvs[:3]]</code></pre></figure></section><h2>2. Clean</h2>
+<p>The command below downloads the public Kaggle mirror into `data/raw/`, which is ignored by Git.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><div class="highlight"><pre><span></span># Run only if data/raw does not already contain the CIC-IDS2017 CSVs.
+# !python scripts/download_kaggle.py
+</pre></div>
+</figure></section><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><div class="highlight"><pre><span></span>raw_csvs = sorted(Path(&#39;data/raw&#39;).glob(&#39;*.csv&#39;))
+len(raw_csvs), [p.name for p in raw_csvs[:3]]
+</pre></div>
+</figure></section><h2>2. Clean</h2>
 <p>`scripts/prepare_cicids.py` performs the shared cleaning step:</p>
 <ul><li>strips whitespace from column names</li><li>maps labels to binary values</li><li>drops metadata/leakage-prone fields such as IPs, flow IDs, and timestamps</li><li>converts remaining features to numeric values</li><li>replaces infinities with missing values</li><li>writes `data/processed/cicids_clean.parquet`</li></ul>
-<p>Train-only imputation and standardization are done in the partitioning script.</p><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><pre><code># !python scripts/prepare_cicids.py --raw-dir data/raw --output data/processed/cicids_clean.parquet</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 8</p><figure><pre><code>import json
+<p>Train-only imputation and standardization are done in the partitioning script.</p><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><div class="highlight"><pre><span></span># !python scripts/prepare_cicids.py --raw-dir data/raw --output data/processed/cicids_clean.parquet
+</pre></div>
+</figure></section><section class="notebook-cell"><p class="cell-label">Code cell 8</p><figure><div class="highlight"><pre><span></span>import json
 import pandas as pd
 
-processed_meta = Path(&#x27;data/processed/cicids_clean.metadata.json&#x27;)
+processed_meta = Path(&#39;data/processed/cicids_clean.metadata.json&#39;)
 if processed_meta.exists():
     meta = json.loads(processed_meta.read_text())
-    print(&#x27;rows:&#x27;, meta[&#x27;rows&#x27;])
-    print(&#x27;features:&#x27;, meta[&#x27;num_features&#x27;])
-    pd.Series(meta[&#x27;attack_distribution&#x27;]).sort_values(ascending=False)
+    print(&#39;rows:&#39;, meta[&#39;rows&#39;])
+    print(&#39;features:&#39;, meta[&#39;num_features&#39;])
+    pd.Series(meta[&#39;attack_distribution&#39;]).sort_values(ascending=False)
 else:
-    print(&#x27;Processed metadata not found yet.&#x27;)</code></pre></figure></section><h2>3. Partition</h2>
+    print(&#39;Processed metadata not found yet.&#39;)
+</pre></div>
+</figure></section><h2>3. Partition</h2>
 <p>The six hospital partitions are generated with a deterministic seed. The default seed is `123`.</p>
-<p>The split is intentionally non-IID. Each hospital is biased toward different attack families while preserving enough benign/attack rows where possible. The final parquet files contain only numeric features and the binary `label` column.</p><section class="notebook-cell"><p class="cell-label">Code cell 10</p><figure><pre><code># !python scripts/make_partitions.py --seed 123</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 11</p><figure><pre><code>rows = []
-for meta_path in sorted(Path(&#x27;data/partitions&#x27;).glob(&#x27;*/metadata.json&#x27;)):
+<p>The split is intentionally non-IID. Each hospital is biased toward different attack families while preserving enough benign/attack rows where possible. The final parquet files contain only numeric features and the binary `label` column.</p><section class="notebook-cell"><p class="cell-label">Code cell 10</p><figure><div class="highlight"><pre><span></span># !python scripts/make_partitions.py --seed 123
+</pre></div>
+</figure></section><section class="notebook-cell"><p class="cell-label">Code cell 11</p><figure><div class="highlight"><pre><span></span>rows = []
+for meta_path in sorted(Path(&#39;data/partitions&#39;).glob(&#39;*/metadata.json&#39;)):
     item = json.loads(meta_path.read_text())
     rows.append({
-        &#x27;hospital_id&#x27;: item[&#x27;hospital_id&#x27;],
-        &#x27;region&#x27;: item[&#x27;region&#x27;],
-        &#x27;num_train&#x27;: item[&#x27;num_train&#x27;],
-        &#x27;num_val&#x27;: item[&#x27;num_val&#x27;],
-        &#x27;num_test&#x27;: item[&#x27;num_test&#x27;],
-        &#x27;num_features&#x27;: item[&#x27;num_features&#x27;],
-        &#x27;train_benign&#x27;: item[&#x27;train_label_counts&#x27;].get(&#x27;0&#x27;, 0),
-        &#x27;train_attack&#x27;: item[&#x27;train_label_counts&#x27;].get(&#x27;1&#x27;, 0),
+        &#39;hospital_id&#39;: item[&#39;hospital_id&#39;],
+        &#39;region&#39;: item[&#39;region&#39;],
+        &#39;num_train&#39;: item[&#39;num_train&#39;],
+        &#39;num_val&#39;: item[&#39;num_val&#39;],
+        &#39;num_test&#39;: item[&#39;num_test&#39;],
+        &#39;num_features&#39;: item[&#39;num_features&#39;],
+        &#39;train_benign&#39;: item[&#39;train_label_counts&#39;].get(&#39;0&#39;, 0),
+        &#39;train_attack&#39;: item[&#39;train_label_counts&#39;].get(&#39;1&#39;, 0),
     })
-pd.DataFrame(rows)</code></pre></figure></section><h2>4. Privacy Boundary Check</h2>
-<p>After partitioning, hospitals should read only their own `data/partitions/&lt;hospital_id&gt;` mount. `shared/` may contain scaler metadata, metrics, and checkpoints, but not raw CSV or parquet hospital rows.</p><section class="notebook-cell"><p class="cell-label">Code cell 13</p><figure><pre><code>shared_data_files = list(Path(&#x27;shared&#x27;).rglob(&#x27;*.csv&#x27;)) + list(Path(&#x27;shared&#x27;).rglob(&#x27;*.parquet&#x27;))
-shared_data_files</code></pre></figure></section>
+pd.DataFrame(rows)
+</pre></div>
+</figure></section><h2>4. Privacy Boundary Check</h2>
+<p>After partitioning, hospitals should read only their own `data/partitions/&lt;hospital_id&gt;` mount. `shared/` may contain scaler metadata, metrics, and checkpoints, but not raw CSV or parquet hospital rows.</p><section class="notebook-cell"><p class="cell-label">Code cell 13</p><figure><div class="highlight"><pre><span></span>shared_data_files = list(Path(&#39;shared&#39;).rglob(&#39;*.csv&#39;)) + list(Path(&#39;shared&#39;).rglob(&#39;*.parquet&#39;))
+shared_data_files
+</pre></div>
+</figure></section>
     </main>
   </div>
 </body>

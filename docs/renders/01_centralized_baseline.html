@@ -23,23 +23,33 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
       <section class="hero"><p class="eyebrow">Handbook</p><h1>Render: 01_centralized_baseline</h1><p>HTML render generated from 01_centralized_baseline.ipynb.</p></section><p><a href="../index.html">Back to handbook</a></p><h1>01 - Centralized and Local Baselines</h1>
 <p>This notebook provides non-hierarchical reference points for the same PyTorch MLP used in the Flower demo.</p>
 <ul><li>Centralized MLP: trains on all simulated hospital train splits.</li><li>Local-only MLP: trains one independent model per hospital.</li></ul>
-<p>These baselines are for comparison. The main architecture demonstration remains hierarchical Flower FedAvg.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><pre><code>from pathlib import Path
+<p>These baselines are for comparison. The main architecture demonstration remains hierarchical Flower FedAvg.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
 import os
 
-root = Path.cwd().parent if Path.cwd().name == &#x27;notebooks&#x27; else Path.cwd()
+root = Path.cwd().parent if Path.cwd().name == &#39;notebooks&#39; else Path.cwd()
 os.chdir(root)
-root</code></pre></figure></section><h2>Centralized MLP</h2>
-<p>This command violates the federated privacy boundary on purpose: it concatenates all simulated hospital train splits. It is useful only as a performance reference.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><pre><code># !python scripts/centralized_mlp_baseline.py --epochs 3 --batch-size 1024</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><pre><code>import pandas as pd
-path = Path(&#x27;reports/centralized_mlp_metrics.csv&#x27;)
-pd.read_csv(path) if path.exists() else &#x27;Run the centralized baseline cell first.&#x27;</code></pre></figure></section><h2>Local-Only Models</h2>
-<p>Each hospital trains independently on its own partition. This approximates the no-collaboration baseline.</p><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><pre><code># !python scripts/local_only_baseline.py --epochs 3 --batch-size 1024</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 8</p><figure><pre><code>path = Path(&#x27;reports/local_only_metrics.csv&#x27;)
-pd.read_csv(path) if path.exists() else &#x27;Run the local-only baseline cell first.&#x27;</code></pre></figure></section>
+root
+</pre></div>
+</figure></section><h2>Centralized MLP</h2>
+<p>This command violates the federated privacy boundary on purpose: it concatenates all simulated hospital train splits. It is useful only as a performance reference.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><div class="highlight"><pre><span></span># !python scripts/centralized_mlp_baseline.py --epochs 3 --batch-size 1024
+</pre></div>
+</figure></section><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><div class="highlight"><pre><span></span>import pandas as pd
+path = Path(&#39;reports/centralized_mlp_metrics.csv&#39;)
+pd.read_csv(path) if path.exists() else &#39;Run the centralized baseline cell first.&#39;
+</pre></div>
+</figure></section><h2>Local-Only Models</h2>
+<p>Each hospital trains independently on its own partition. This approximates the no-collaboration baseline.</p><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><div class="highlight"><pre><span></span># !python scripts/local_only_baseline.py --epochs 3 --batch-size 1024
+</pre></div>
+</figure></section><section class="notebook-cell"><p class="cell-label">Code cell 8</p><figure><div class="highlight"><pre><span></span>path = Path(&#39;reports/local_only_metrics.csv&#39;)
+pd.read_csv(path) if path.exists() else &#39;Run the local-only baseline cell first.&#39;
+</pre></div>
+</figure></section>
     </main>
   </div>
 </body>

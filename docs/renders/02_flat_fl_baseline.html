@@ -23,24 +23,32 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
       <section class="hero"><p class="eyebrow">Handbook</p><h1>Render: 02_flat_fl_baseline</h1><p>HTML render generated from 02_flat_fl_baseline.ipynb.</p></section><p><a href="../index.html">Back to handbook</a></p><h1>02 - Flat Flower Baseline</h1>
 <p>This notebook runs a one-layer Flower FedAvg baseline. All six hospital SuperNodes connect to a single `flat` SuperLink.</p>
-<p>The flat baseline helps compare the hierarchical result against ordinary FedAvg without regional gateways.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><pre><code>from pathlib import Path
+<p>The flat baseline helps compare the hierarchical result against ordinary FedAvg without regional gateways.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
 import os
 
-root = Path.cwd().parent if Path.cwd().name == &#x27;notebooks&#x27; else Path.cwd()
+root = Path.cwd().parent if Path.cwd().name == &#39;notebooks&#39; else Path.cwd()
 os.chdir(root)
-root</code></pre></figure></section><h2>Start Flat Federation Services</h2>
-<p>`docker-compose.yml` includes flat services in addition to the hierarchical services. The command below starts only the flat SuperLink, ServerApp SuperExec, and six flat hospital SuperNodes/SuperExecs.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><pre><code># !python scripts/generate_compose.py
+root
+</pre></div>
+</figure></section><h2>Start Flat Federation Services</h2>
+<p>`docker-compose.yml` includes flat services in addition to the hierarchical services. The command below starts only the flat SuperLink, ServerApp SuperExec, and six flat hospital SuperNodes/SuperExecs.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><div class="highlight"><pre><span></span># !python scripts/generate_compose.py
 # !python scripts/configure_flower_profiles.py
-# !docker compose up --build -d flat-superlink flat-superexec-serverapp flat-hospital-eu-01-supernode flat-hospital-eu-01-superexec-clientapp flat-hospital-eu-02-supernode flat-hospital-eu-02-superexec-clientapp flat-hospital-eu-03-supernode flat-hospital-eu-03-superexec-clientapp flat-hospital-na-01-supernode flat-hospital-na-01-superexec-clientapp flat-hospital-na-02-supernode flat-hospital-na-02-superexec-clientapp flat-hospital-na-03-supernode flat-hospital-na-03-superexec-clientapp</code></pre></figure></section><h2>Train and Evaluate</h2>
-<p>The flat baseline uses the same `ServerApp` path as regional training, but with all six hospitals connected to the `flat` profile.</p><section class="notebook-cell"><p class="cell-label">Code cell 6</p><figure><pre><code># !python scripts/flat_fl_baseline.py --rounds 3 --batch-size 1024
-# !python scripts/evaluate_global_model.py --checkpoint shared/checkpoints/flat/round_3.pt --output reports/flat_metrics_summary.csv</code></pre></figure></section><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><pre><code>import pandas as pd
-path = Path(&#x27;reports/flat_metrics_summary.csv&#x27;)
-pd.read_csv(path) if path.exists() else &#x27;Run the flat baseline cells first.&#x27;</code></pre></figure></section>
+# !docker compose up --build -d flat-superlink flat-superexec-serverapp flat-hospital-eu-01-supernode flat-hospital-eu-01-superexec-clientapp flat-hospital-eu-02-supernode flat-hospital-eu-02-superexec-clientapp flat-hospital-eu-03-supernode flat-hospital-eu-03-superexec-clientapp flat-hospital-na-01-supernode flat-hospital-na-01-superexec-clientapp flat-hospital-na-02-supernode flat-hospital-na-02-superexec-clientapp flat-hospital-na-03-supernode flat-hospital-na-03-superexec-clientapp
+</pre></div>
+</figure></section><h2>Train and Evaluate</h2>
+<p>The flat baseline uses the same `ServerApp` path as regional training, but with all six hospitals connected to the `flat` profile.</p><section class="notebook-cell"><p class="cell-label">Code cell 6</p><figure><div class="highlight"><pre><span></span># !python scripts/flat_fl_baseline.py --rounds 3 --batch-size 1024
+# !python scripts/evaluate_global_model.py --checkpoint shared/checkpoints/flat/round_3.pt --output reports/flat_metrics_summary.csv
+</pre></div>
+</figure></section><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><div class="highlight"><pre><span></span>import pandas as pd
+path = Path(&#39;reports/flat_metrics_summary.csv&#39;)
+pd.read_csv(path) if path.exists() else &#39;Run the flat baseline cells first.&#39;
+</pre></div>
+</figure></section>
     </main>
   </div>
 </body>

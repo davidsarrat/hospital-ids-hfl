@@ -86,9 +86,16 @@ Evaluate the final global checkpoint:
 make eval GLOBAL_ROUNDS=3
 ```
 
+Generate row-level predictions from the trained global checkpoint:
+
+```bash
+make predict GLOBAL_ROUNDS=3
+```
+
 For a compact end-to-end demo that launches the Flower topology, runs one global
-round, evaluates the resulting checkpoint, refreshes the rendered notebook, and
-prints the global metrics summary:
+round, evaluates the resulting checkpoint, generates sample predictions, captures
+a verbose transcript, refreshes the rendered notebook, and prints the global
+metrics summary:
 
 ```bash
 make demo
@@ -114,6 +121,8 @@ shared/checkpoints/region_na/round_<g>.pt
 shared/checkpoints/global/round_<g>.pt
 reports/metrics_summary.csv
 reports/metrics_summary_global.csv
+reports/predictions_hospital_eu_01.csv
+reports/demo_transcript.txt
 ```
 
 `shared/` is for checkpoints, metrics, and preprocessing metadata only. It should never contain raw CSV or parquet hospital rows.

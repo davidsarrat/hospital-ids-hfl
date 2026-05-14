@@ -23,78 +23,185 @@
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
 <a class="" href="../episodes/08-evaluation-privacy.html">08 - Evaluation, privacy, and next steps</a>
-<a href="../renders/04_flower_runtime_orchestration.html">Render notebook 04</a>
+<a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>05 - Regional ServerApp and FedAvg</h1><p>How the regional server aggregates hospitals and writes regional checkpoints.</p></section><h2>Shared entry point</h2><p>The ServerApp reads <code>level</code> from the run config. This lets the same component serve a regional federation or the global federation.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L16-L41">hfl_cicids/server_app.py:16-41</a></figcaption><pre><code>  16  @app.main()
-  17  def main(grid: Grid, context: Context) -&gt; None:
-  18      level = str(context.run_config[&quot;level&quot;])
-  19  
-  20      if level == &quot;regional&quot;:
-  21          _run_regional_serverapp(grid, context)
-  22      elif level == &quot;global&quot;:
-  23          _run_global_serverapp(grid, context)
-  24      else:
-  25          raise ValueError(f&quot;Unknown FL level: {level}&quot;)
-  26  
-  27  
-  28  def _initial_arrays(context: Context) -&gt; ArrayRecord:
-  29      input_dim = int(context.run_config.get(&quot;input-dim&quot;, 0))
-  30      if input_dim &lt;= 0:
-  31          raise ValueError(&quot;Run config must define input-dim&quot;)
-  32  
-  33      model = TabularIDSNet(input_dim=input_dim)
-  34  
-  35      init_checkpoint = str(context.run_config.get(&quot;init-checkpoint&quot;, &quot;&quot;))
-  36      if init_checkpoint:
-  37          path = Path(init_checkpoint)
-  38          if path.exists():
-  39              model.load_state_dict(torch.load(path, map_location=&quot;cpu&quot;, weights_only=True))
-  40  
-  41      return ArrayRecord(model.state_dict())</code></pre></figure><h2>Regional federation</h2><p>Each region uses FedAvg with <code>weighted_by_key='num-examples'</code>. The clients are the hospitals connected to the regional SuperLink.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L44-L85">hfl_cicids/server_app.py:44-85</a></figcaption><pre><code>  44  def _run_regional_serverapp(grid: Grid, context: Context) -&gt; None:
-  45      &quot;&quot;&quot;Aggregate hospital SuperNode updates inside one region.&quot;&quot;&quot;
-  46  
-  47      num_rounds = int(context.run_config[&quot;num-server-rounds&quot;])
-  48      lr = float(context.run_config[&quot;learning-rate&quot;])
-  49      min_train_nodes = int(context.run_config[&quot;min-train-nodes&quot;])
-  50  
-  51      strategy = FedAvg(
-  52          fraction_train=float(context.run_config[&quot;fraction-train&quot;]),
-  53          fraction_evaluate=float(context.run_config[&quot;fraction-evaluate&quot;]),
-  54          min_train_nodes=min_train_nodes,
-  55          min_evaluate_nodes=int(context.run_config[&quot;min-evaluate-nodes&quot;]),
-  56          min_available_nodes=int(context.run_config[&quot;min-available-nodes&quot;]),
-  57          weighted_by_key=&quot;num-examples&quot;,
-  58      )
-  59  
-  60      result = strategy.start(
-  61          grid=grid,
-  62          initial_arrays=_initial_arrays(context),
-  63          num_rounds=num_rounds,
-  64          train_config=ConfigRecord(
-  65              {
-  66                  &quot;lr&quot;: lr,
-  67                  &quot;global-round&quot;: int(context.run_config[&quot;global-round&quot;]),
-  68              }
-  69          ),
-  70      )
-  71  
-  72      output_checkpoint = Path(str(context.run_config[&quot;output-checkpoint&quot;]))
-  73      save_arrayrecord_checkpoint(
-  74          result.arrays,
-  75          output_checkpoint,
-  76          extra_metadata={
-  77              &quot;level&quot;: &quot;regional&quot;,
-  78              &quot;region&quot;: str(context.run_config[&quot;region&quot;]),
-  79              &quot;global_round&quot;: int(context.run_config[&quot;global-round&quot;]),
-  80              &quot;regional_rounds&quot;: num_rounds,
-  81              &quot;input_dim&quot;: int(context.run_config[&quot;input-dim&quot;]),
-  82              &quot;num_examples&quot;: int(context.run_config.get(&quot;region-num-examples&quot;, 1)),
-  83              &quot;weighted_by_key&quot;: &quot;num-examples&quot;,
-  84          },
-  85      )</code></pre></figure><h2>Formula</h2><figure><figcaption>Regional FedAvg weighted by examples</figcaption><pre><code>
-N_r = sum_h n_h
-theta_r = sum_h (n_h / N_r) * theta_h</code></pre></figure><div class="pager"><a href="04-model-clientapp.html">Previous: 04 - Model and hospital ClientApp</a><span></span><a href="06-gateway-global.html">Next: 06 - Regional gateway and global aggregation</a></div>
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>05 - Regional ServerApp and FedAvg</h1><p>How the regional server aggregates hospitals and writes regional checkpoints.</p></section><h2>Shared entry point</h2><p>The ServerApp reads <code>level</code> from the run config. This lets the same component serve a regional federation or the global federation.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L16-L41">hfl_cicids/server_app.py:16-41</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span></pre></div></td><td class="code"><div><pre><span></span><span class="nd">@app</span><span class="o">.</span><span class="n">main</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">grid</span><span class="p">:</span> <span class="n">Grid</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">level</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;level&quot;</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="n">level</span> <span class="o">==</span> <span class="s2">&quot;regional&quot;</span><span class="p">:</span>
+        <span class="n">_run_regional_serverapp</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">level</span> <span class="o">==</span> <span class="s2">&quot;global&quot;</span><span class="p">:</span>
+        <span class="n">_run_global_serverapp</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown FL level: </span><span class="si">{</span><span class="n">level</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_initial_arrays</span><span class="p">(</span><span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ArrayRecord</span><span class="p">:</span>
+    <span class="n">input_dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;input-dim&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">input_dim</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Run config must define input-dim&quot;</span><span class="p">)</span>
+
+    <span class="n">model</span> <span class="o">=</span> <span class="n">TabularIDSNet</span><span class="p">(</span><span class="n">input_dim</span><span class="o">=</span><span class="n">input_dim</span><span class="p">)</span>
+
+    <span class="n">init_checkpoint</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;init-checkpoint&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">init_checkpoint</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">init_checkpoint</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">ArrayRecord</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">())</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L16-L25">Lines 16-25</a> choose regional or global behavior from <code>context.run_config['level']</code>.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L28-L41">Lines 28-41</a> create initial arrays from the configured input dimension and optionally load a previous checkpoint.</li><li>This is how a later global round can seed regional hospital training with the previous global model.</li></ul></div><h2>Regional federation</h2><p>Each region uses FedAvg with <code>weighted_by_key='num-examples'</code>. The clients are the hospitals connected to the regional SuperLink.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L57-L116">hfl_cicids/server_app.py:57-116</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_run_regional_serverapp</span><span class="p">(</span><span class="n">grid</span><span class="p">:</span> <span class="n">Grid</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Aggregate hospital SuperNode updates inside one region.&quot;&quot;&quot;</span>
+
+    <span class="n">num_rounds</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;num-server-rounds&quot;</span><span class="p">])</span>
+    <span class="n">lr</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;learning-rate&quot;</span><span class="p">])</span>
+    <span class="n">min_train_nodes</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;min-train-nodes&quot;</span><span class="p">])</span>
+
+    <span class="n">strategy</span> <span class="o">=</span> <span class="n">FedAvg</span><span class="p">(</span>
+        <span class="n">fraction_train</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;fraction-train&quot;</span><span class="p">]),</span>
+        <span class="n">fraction_evaluate</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;fraction-evaluate&quot;</span><span class="p">]),</span>
+        <span class="n">min_train_nodes</span><span class="o">=</span><span class="n">min_train_nodes</span><span class="p">,</span>
+        <span class="n">min_evaluate_nodes</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;min-evaluate-nodes&quot;</span><span class="p">]),</span>
+        <span class="n">min_available_nodes</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;min-available-nodes&quot;</span><span class="p">]),</span>
+        <span class="n">weighted_by_key</span><span class="o">=</span><span class="s2">&quot;num-examples&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">strategy</span><span class="o">.</span><span class="n">start</span><span class="p">(</span>
+        <span class="n">grid</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span>
+        <span class="n">initial_arrays</span><span class="o">=</span><span class="n">_initial_arrays</span><span class="p">(</span><span class="n">context</span><span class="p">),</span>
+        <span class="n">num_rounds</span><span class="o">=</span><span class="n">num_rounds</span><span class="p">,</span>
+        <span class="n">train_config</span><span class="o">=</span><span class="n">ConfigRecord</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="n">lr</span><span class="p">,</span>
+                <span class="s2">&quot;global-round&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;global-round&quot;</span><span class="p">]),</span>
+            <span class="p">}</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="n">final_train_metrics</span> <span class="o">=</span> <span class="n">_metricrecord_to_dict</span><span class="p">(</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">train_metrics_clientapp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">num_rounds</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">final_eval_metrics</span> <span class="o">=</span> <span class="n">_metricrecord_to_dict</span><span class="p">(</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">evaluate_metrics_clientapp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">num_rounds</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="n">output_checkpoint</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;output-checkpoint&quot;</span><span class="p">]))</span>
+    <span class="n">save_arrayrecord_checkpoint</span><span class="p">(</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">arrays</span><span class="p">,</span>
+        <span class="n">output_checkpoint</span><span class="p">,</span>
+        <span class="n">extra_metadata</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">&quot;level&quot;</span><span class="p">:</span> <span class="s2">&quot;regional&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;region&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;region&quot;</span><span class="p">]),</span>
+            <span class="s2">&quot;global_round&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;global-round&quot;</span><span class="p">]),</span>
+            <span class="s2">&quot;regional_rounds&quot;</span><span class="p">:</span> <span class="n">num_rounds</span><span class="p">,</span>
+            <span class="s2">&quot;input_dim&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="p">[</span><span class="s2">&quot;input-dim&quot;</span><span class="p">]),</span>
+            <span class="s2">&quot;num_examples&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">run_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;region-num-examples&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)),</span>
+            <span class="s2">&quot;weighted_by_key&quot;</span><span class="p">:</span> <span class="s2">&quot;num-examples&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;val_f1&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">final_eval_metrics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;eval_f1&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+            <span class="s2">&quot;val_roc_auc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">final_eval_metrics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;eval_roc_auc&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+            <span class="s2">&quot;val_auprc&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">final_eval_metrics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;eval_auprc&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+            <span class="s2">&quot;val_false_positive_rate&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span>
+                <span class="n">final_eval_metrics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;eval_false_positive_rate&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;val_false_negative_rate&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span>
+                <span class="n">final_eval_metrics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;eval_false_negative_rate&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;final_train_metrics&quot;</span><span class="p">:</span> <span class="n">final_train_metrics</span><span class="p">,</span>
+            <span class="s2">&quot;final_evaluate_metrics&quot;</span><span class="p">:</span> <span class="n">final_eval_metrics</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">)</span>
+</pre></div></td></tr></table></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L64-L71">Lines 64-71</a> instantiate FedAvg and explicitly set <code>weighted_by_key="num-examples"</code>.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L73-L83">Lines 73-83</a> start the Flower strategy on the regional grid. The clients sampled here are hospital SuperNodes connected to the regional SuperLink.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L85-L90">Lines 85-90</a> capture the final aggregated train/evaluate metrics from Flower's <code>Result</code> object.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L92-L116">Lines 92-116</a> save the aggregated regional checkpoint plus metadata needed by the gateway.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L102">Line 102</a> records the region's training-example total so the global layer can weight this region correctly.</li></ul></div><h2>Formula</h2><figure><figcaption>Regional FedAvg weighted by examples</figcaption><div class="highlight"><pre><span></span>N_r = sum_h n_h
+theta_r = sum_h (n_h / N_r) * theta_h
+</pre></div>
+</figure><aside class="lab-card"><strong>Hands-on lab: flat FL comparison</strong><p>The flat baseline lab shows a one-layer Flower federation where all six hospitals connect to one SuperLink. Compare it with the regional/global split explained here.</p><a href="../renders/02_flat_fl_baseline.html">Open lab render</a></aside><div class="pager"><a href="04-model-clientapp.html">Previous: 04 - Model and hospital ClientApp</a><span></span><a href="06-gateway-global.html">Next: 06 - Regional gateway and global aggregation</a></div>
     </main>
   </div>
 </body>
