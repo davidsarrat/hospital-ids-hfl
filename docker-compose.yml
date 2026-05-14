@@ -1,3 +1,24 @@
+x-superexec-app: &superexec-app
+  image: hospital-ids-hfl-superexec:${HFL_IMAGE_TAG:-latest}
+  build:
+    context: .
+    dockerfile_inline: |
+      FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
+      USER root
+      RUN apt-get update \
+        && apt-get -y --no-install-recommends install build-essential \
+        && rm -rf /var/lib/apt/lists/*
+      USER app
+      WORKDIR /app
+      COPY --chown=app:app pyproject.toml README.md ./
+      COPY --chown=app:app hfl_cicids ./hfl_cicids
+      COPY --chown=app:app scripts ./scripts
+      RUN python -m pip install -U --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        "torch>=2.3,<3.0"
+      RUN python -m pip install -U --no-cache-dir .
+      ENTRYPOINT ["flower-superexec"]
+
 services:
 
   global-superlink:
@@ -10,24 +31,7 @@ services:
       - "39093:9093"
 
   global-superexec-serverapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -49,24 +53,7 @@ services:
       - "19093:9093"
 
   region-eu-superexec-serverapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -94,24 +81,7 @@ services:
       - region-eu-superlink
 
   hospital-eu-01-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -140,24 +110,7 @@ services:
       - region-eu-superlink
 
   hospital-eu-02-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -186,24 +139,7 @@ services:
       - region-eu-superlink
 
   hospital-eu-03-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -234,24 +170,7 @@ services:
       - global-superlink
 
   region-eu-gateway-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -273,24 +192,7 @@ services:
       - "29093:9093"
 
   region-na-superexec-serverapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -318,24 +220,7 @@ services:
       - region-na-superlink
 
   hospital-na-01-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -364,24 +249,7 @@ services:
       - region-na-superlink
 
   hospital-na-02-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -410,24 +278,7 @@ services:
       - region-na-superlink
 
   hospital-na-03-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -458,24 +309,7 @@ services:
       - global-superlink
 
   region-na-gateway-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -497,24 +331,7 @@ services:
       - "49093:9093"
 
   flat-superexec-serverapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -542,24 +359,7 @@ services:
       - flat-superlink
 
   flat-hospital-eu-01-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -588,24 +388,7 @@ services:
       - flat-superlink
 
   flat-hospital-eu-02-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -634,24 +417,7 @@ services:
       - flat-superlink
 
   flat-hospital-eu-03-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -680,24 +446,7 @@ services:
       - flat-superlink
 
   flat-hospital-na-01-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -726,24 +475,7 @@ services:
       - flat-superlink
 
   flat-hospital-na-02-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -772,24 +504,7 @@ services:
       - flat-superlink
 
   flat-hospital-na-03-superexec-clientapp:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \
-          && apt-get -y --no-install-recommends install build-essential \
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \
-          --index-url https://download.pytorch.org/whl/cpu \
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT ["flower-superexec"]
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type

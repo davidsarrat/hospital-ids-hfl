@@ -31,7 +31,7 @@ def _msg_config(msg: Message) -> dict[str, Any]:
 
 @app.train()
 def train(msg: Message, context: Context) -> Message:
-    """Train a hospital model or return a regional checkpoint as gateway update."""
+    """Train a healthcare-site model or return a regional checkpoint as gateway update."""
 
     role = str(context.node_config.get("role", "hospital"))
 
@@ -87,8 +87,8 @@ def _train_hospital(msg: Message, context: Context) -> Message:
 def _train_region_gateway(msg: Message, context: Context) -> Message:
     """Return an already aggregated regional checkpoint to the global hub.
 
-    The region gateway is a parent-layer client. It does not train on rows and
-    should only mount shared checkpoints, never hospital partition directories.
+    The region gateway is a parent-layer client. It does not train on network-flow rows and
+    should only mount shared checkpoints, never site partition directories.
     """
 
     region = str(context.node_config["region"])
@@ -132,7 +132,7 @@ def _train_region_gateway(msg: Message, context: Context) -> Message:
 
 @app.evaluate()
 def evaluate(msg: Message, context: Context) -> Message:
-    """Evaluate a received model on a hospital validation or test split."""
+    """Evaluate a received model on a healthcare-site validation or test split."""
 
     role = str(context.node_config.get("role", "hospital"))
 

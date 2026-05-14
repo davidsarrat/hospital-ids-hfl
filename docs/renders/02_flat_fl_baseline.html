@@ -18,7 +18,7 @@
 <a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
 <a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
 <a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
-<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and site ClientApp</a>
 <a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
@@ -27,26 +27,149 @@
     </nav>
     <main class="content">
       <section class="hero"><p class="eyebrow">Handbook</p><h1>Render: 02_flat_fl_baseline</h1><p>HTML render generated from 02_flat_fl_baseline.ipynb.</p></section><p><a href="../index.html">Back to handbook</a></p><h1>02 - Flat Flower Baseline</h1>
-<p>This notebook runs a one-layer Flower FedAvg baseline. All six hospital SuperNodes connect to a single `flat` SuperLink.</p>
-<p>The flat baseline helps compare the hierarchical result against ordinary FedAvg without regional gateways.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
+<p>This vignette executes safe control-plane code for the one-layer Flower baseline. The flat baseline is a comparison point: all six healthcare-network sites connect to one `flat` SuperLink, instead of using regional hubs plus gateway SuperNodes.</p><section class="notebook-cell"><p class="cell-label">Code cell 2</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
 import os
 
-root = Path.cwd().parent if Path.cwd().name == &#39;notebooks&#39; else Path.cwd()
-os.chdir(root)
-root
+ROOT = Path.cwd()
+if not (ROOT / &quot;pyproject.toml&quot;).exists():
+    ROOT = ROOT.parent
+os.chdir(ROOT)
+ROOT
 </pre></div>
-</figure></section><h2>Start Flat Federation Services</h2>
-<p>`docker-compose.yml` includes flat services in addition to the hierarchical services. The command below starts only the flat SuperLink, ServerApp SuperExec, and six flat hospital SuperNodes/SuperExecs.</p><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><div class="highlight"><pre><span></span># !python scripts/generate_compose.py
-# !python scripts/configure_flower_profiles.py
-# !docker compose up --build -d flat-superlink flat-superexec-serverapp flat-hospital-eu-01-supernode flat-hospital-eu-01-superexec-clientapp flat-hospital-eu-02-supernode flat-hospital-eu-02-superexec-clientapp flat-hospital-eu-03-supernode flat-hospital-eu-03-superexec-clientapp flat-hospital-na-01-supernode flat-hospital-na-01-superexec-clientapp flat-hospital-na-02-supernode flat-hospital-na-02-superexec-clientapp flat-hospital-na-03-supernode flat-hospital-na-03-superexec-clientapp
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>PosixPath(&#39;/Users/david/Documents/GitHub/project&#39;)
 </pre></div>
-</figure></section><h2>Train and Evaluate</h2>
-<p>The flat baseline uses the same `ServerApp` path as regional training, but with all six hospitals connected to the `flat` profile.</p><section class="notebook-cell"><p class="cell-label">Code cell 6</p><figure><div class="highlight"><pre><span></span># !python scripts/flat_fl_baseline.py --rounds 3 --batch-size 1024
-# !python scripts/evaluate_global_model.py --checkpoint shared/checkpoints/flat/round_3.pt --output reports/flat_metrics_summary.csv
+</figure></section><h2>1. Regenerate Compose and inspect flat services</h2><section class="notebook-cell"><p class="cell-label">Code cell 4</p><figure><div class="highlight"><pre><span></span>import subprocess
+import sys
+from pathlib import Path
+import pandas as pd
+import yaml
+
+flat_compose = Path(&quot;reports/docker-compose-flat-preview.yml&quot;)
+flat_compose.parent.mkdir(parents=True, exist_ok=True)
+proc = subprocess.run(
+    [sys.executable, &quot;scripts/generate_compose.py&quot;, &quot;--output&quot;, str(flat_compose)],
+    cwd=ROOT,
+    capture_output=True,
+    text=True,
+    check=True,
+)
+print(proc.stdout.strip())
+
+compose = yaml.safe_load(flat_compose.read_text())
+flat_services = sorted(name for name in compose[&quot;services&quot;] if name.startswith(&quot;flat-&quot;))
+pd.DataFrame({&quot;flat_service&quot;: flat_services})
 </pre></div>
-</figure></section><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><div class="highlight"><pre><span></span>import pandas as pd
-path = Path(&#39;reports/flat_metrics_summary.csv&#39;)
-pd.read_csv(path) if path.exists() else &#39;Run the flat baseline cells first.&#39;
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>Wrote reports/docker-compose-flat-preview.yml
+</pre></div>
+</figure><div class="notebook-output-html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>flat_service</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>flat-hospital-eu-01-superexec-clientapp</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>flat-hospital-eu-01-supernode</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>flat-hospital-eu-02-superexec-clientapp</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>flat-hospital-eu-02-supernode</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>flat-hospital-eu-03-superexec-clientapp</td>
+    </tr>
+    <tr>
+      <th>5</th>
+      <td>flat-hospital-eu-03-supernode</td>
+    </tr>
+    <tr>
+      <th>6</th>
+      <td>flat-hospital-na-01-superexec-clientapp</td>
+    </tr>
+    <tr>
+      <th>7</th>
+      <td>flat-hospital-na-01-supernode</td>
+    </tr>
+    <tr>
+      <th>8</th>
+      <td>flat-hospital-na-02-superexec-clientapp</td>
+    </tr>
+    <tr>
+      <th>9</th>
+      <td>flat-hospital-na-02-supernode</td>
+    </tr>
+    <tr>
+      <th>10</th>
+      <td>flat-hospital-na-03-superexec-clientapp</td>
+    </tr>
+    <tr>
+      <th>11</th>
+      <td>flat-hospital-na-03-supernode</td>
+    </tr>
+    <tr>
+      <th>12</th>
+      <td>flat-superexec-serverapp</td>
+    </tr>
+    <tr>
+      <th>13</th>
+      <td>flat-superlink</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></section><h2>2. Execute the flat FL dry-run command</h2><section class="notebook-cell"><p class="cell-label">Code cell 6</p><figure><div class="highlight"><pre><span></span>cmd = [
+    sys.executable,
+    &quot;scripts/flat_fl_baseline.py&quot;,
+    &quot;--rounds&quot;,
+    &quot;1&quot;,
+    &quot;--batch-size&quot;,
+    &quot;8192&quot;,
+    &quot;--dry-run&quot;,
+]
+proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=True)
+print(proc.stdout)
+if proc.stderr:
+    print(proc.stderr)
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>Running: flwr run . flat --stream --run-config &#39;level=&quot;regional&quot; region=&quot;flat&quot;
+global-round=1 init-checkpoint=&quot;/shared/checkpoints/flat/round_0.pt&quot;
+output-checkpoint=&quot;/shared/checkpoints/flat/round_1.pt&quot; num-server-rounds=1
+local-epochs=1 batch-size=8192 learning-rate=0.001 input-dim=78
+region-num-examples=1981517 fraction-train=1.0 fraction-evaluate=1.0
+min-train-nodes=6 min-evaluate-nodes=6 min-available-nodes=6&#39;
+Flat FL checkpoint: shared/checkpoints/flat/round_1.pt
+</pre></div>
+</figure></section><h2>3. Optional flat metrics</h2><section class="notebook-cell"><p class="cell-label">Code cell 8</p><figure><div class="highlight"><pre><span></span>flat_metrics = Path(&quot;reports/flat_metrics_summary.csv&quot;)
+if flat_metrics.exists():
+    pd.read_csv(flat_metrics).head(12)
+else:
+    print(&quot;Flat metrics are not present. Run `make flat` and then evaluate the flat checkpoint to populate them.&quot;)
+</pre></div>
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>Flat metrics are not present. Run `make flat` and then evaluate the flat checkpoint to populate them.
 </pre></div>
 </figure></section>
     </main>

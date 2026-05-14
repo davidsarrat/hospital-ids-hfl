@@ -1,5 +1,7 @@
 # Demo Walkthrough
 
+CIC-IDS2017 is network-flow telemetry for intrusion detection. It is not medical or clinical data; the `hospital_*` names below identify simulated healthcare-network sites.
+
 1. Install dependencies:
 
    ```bash

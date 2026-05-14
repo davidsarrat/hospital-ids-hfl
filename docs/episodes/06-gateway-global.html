@@ -18,7 +18,7 @@
 <a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
 <a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
 <a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
-<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and site ClientApp</a>
 <a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
 <a class="active" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
@@ -26,7 +26,7 @@
 <a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>06 - Regional gateway and global aggregation</h1><p>The key piece: the global layer sees regions as clients, not hospitals.</p></section><h2>ClientApp in gateway mode</h2><p>The gateway does not train. It loads the already aggregated regional checkpoint and its metadata. It returns that model to the global SuperLink as a client update.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L87-L130">hfl_cicids/client_app.py:87-130</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 87</span>
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>06 - Regional gateway and global aggregation</h1><p>The key piece: the global layer sees regions as clients, not individual sites.</p></section><h2>ClientApp in gateway mode</h2><p>The gateway does not train. It loads the already aggregated regional checkpoint and its metadata. It returns that model to the global SuperLink as a client update.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L87-L130">hfl_cicids/client_app.py:87-130</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 87</span>
 <span class="normal"> 88</span>
 <span class="normal"> 89</span>
 <span class="normal"> 90</span>
@@ -72,8 +72,8 @@
 <span class="normal">130</span></pre></div></td><td class="code"><div><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_train_region_gateway</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Message</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an already aggregated regional checkpoint to the global hub.</span>
 
-<span class="sd">    The region gateway is a parent-layer client. It does not train on rows and</span>
-<span class="sd">    should only mount shared checkpoints, never hospital partition directories.</span>
+<span class="sd">    The region gateway is a parent-layer client. It does not train on network-flow rows and</span>
+<span class="sd">    should only mount shared checkpoints, never site partition directories.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">region</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">node_config</span><span class="p">[</span><span class="s2">&quot;region&quot;</span><span class="p">])</span>
@@ -188,7 +188,7 @@
         <span class="p">},</span>
     <span class="p">)</span>
 </pre></div></td></tr></table></div>
-</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L124-L131">Lines 124-131</a> configure FedAvg at the global level. Here the clients are gateway SuperNodes, not hospitals.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L133-L142">Lines 133-142</a> run exactly one global aggregation round for each outer loop iteration.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L144-L155">Lines 144-155</a> save the global checkpoint and metadata after the gateway updates are aggregated.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L152">Line 152</a> records the global training-example total, which should match the sum of regional totals.</li></ul></div><h2>Formula</h2><figure><figcaption>Global FedAvg weighted by region</figcaption><div class="highlight"><pre><span></span>N_global = sum_r N_r
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L124-L131">Lines 124-131</a> configure FedAvg at the global level. Here the clients are gateway SuperNodes, not individual sites.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L133-L142">Lines 133-142</a> run exactly one global aggregation round for each outer loop iteration.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L144-L155">Lines 144-155</a> save the global checkpoint and metadata after the gateway updates are aggregated.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/server_app.py#L152">Line 152</a> records the global training-example total, which should match the sum of regional totals.</li></ul></div><h2>Formula</h2><figure><figcaption>Global FedAvg weighted by region</figcaption><div class="highlight"><pre><span></span>N_global = sum_r N_r
 theta_global = sum_r (N_r / N_global) * theta_r
 </pre></div>
 </figure><aside class="callout"><strong>Why this matters</strong><p>This is the difference between a real hierarchical demo and a Python script that averages files. The global checkpoint comes from a Flower federation with a global SuperLink.</p></aside><div class="pager"><a href="05-serverapp-fedavg.html">Previous: 05 - Regional ServerApp and FedAvg</a><span></span><a href="07-orchestration.html">Next: 07 - Orchestration, Docker, and logs</a></div>

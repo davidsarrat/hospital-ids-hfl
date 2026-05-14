@@ -1,17 +1,34 @@
 # hospital-ids-hfl
 
-`hospital-ids-hfl` demonstrates a three-layer hierarchical federated learning system using Flower and CIC-IDS2017.
+`hospital-ids-hfl` demonstrates a three-layer hierarchical federated learning system using Flower and CIC-IDS2017 network-flow telemetry.
 
-Hospitals are represented as Flower SuperNodes connected to regional SuperLinks. Each hospital trains locally on its own CIC-IDS2017 partition. Regional ServerApps aggregate hospital updates using FedAvg and save regional checkpoints.
+The "hospital" entities in this repository are healthcare network operators, not clinical departments and not patient-record holders. Each simulated hospital trains locally on its own CIC-IDS2017 network-flow partition. Regional ServerApps aggregate site updates using FedAvg and save regional checkpoints.
 
-Each region is represented at the global level by a RegionGateway SuperNode. The gateway does not hold raw hospital data. It loads the latest regional checkpoint and returns it to the global SuperLink as a model update, weighted by the total number of regional training examples.
+Each region is represented at the global level by a RegionGateway SuperNode. The gateway does not hold raw site telemetry. It loads the latest regional checkpoint and returns it to the global SuperLink as a model update, weighted by the total number of regional training examples.
 
-The global ServerApp aggregates regional checkpoints into a global model. This demonstrates how local institutions, regional hubs, and national/international hubs can collaborate without centralizing raw data.
+The global ServerApp aggregates regional checkpoints into a global model. This demonstrates how local healthcare institutions, regional security hubs, and national/international hubs can collaborate on intrusion detection without centralizing network-flow rows.
+
+## Data Framing
+
+CIC-IDS2017 is not a medical dataset. It does not contain patient records, diagnoses, imaging, lab results, prescriptions, billing data, or any other clinical attributes.
+
+The data consists of labeled network-flow records generated from packet captures with CICFlowMeter. In this demo, the labels mean:
+
+```text
+0 = BENIGN network flow
+1 = MALICIOUS / ATTACK network flow
+```
+
+The hospital framing is therefore a cybersecurity scenario:
+
+> Healthcare organizations collaboratively train an intrusion-detection model for their network traffic while keeping local network-flow telemetry inside each site.
+
+Use "hospital network-flow telemetry" or "healthcare network traffic" when describing the local data boundary. Avoid interpreting this project as medical diagnosis, patient-risk prediction, or clinical decision support.
 
 ## Topology
 
 ```text
-Hospital SuperNodes
+Healthcare-site SuperNodes
   -> Region EU / Region NA SuperLinks
     -> regional checkpoints
       -> RegionGateway SuperNodes
@@ -19,7 +36,7 @@ Hospital SuperNodes
           -> global checkpoint
 ```
 
-The simulated hospitals are:
+The simulated healthcare-network sites are:
 
 ```text
 region_eu: hospital_eu_01, hospital_eu_02, hospital_eu_03
@@ -34,14 +51,9 @@ The demo uses the Kaggle mirror of CIC-IDS2017:
 kaggle datasets download -d chethuhn/network-intrusion-dataset -p data/raw --unzip
 ```
 
-The authoritative dataset description is the Canadian Institute for Cybersecurity IDS 2017 page. Labels are mapped as:
+The authoritative dataset description is the Canadian Institute for Cybersecurity IDS 2017 page. The binary label mapping above is applied during preprocessing.
 
-```text
-0 = BENIGN network flow
-1 = MALICIOUS / ATTACK network flow
-```
-
-This project validates the federated-learning infrastructure pattern. It does not claim that CIC-IDS2017 alone is sufficient for a deployable hospital IDS.
+This project validates the federated-learning infrastructure pattern. It does not claim that CIC-IDS2017 alone is sufficient for a deployable healthcare-network IDS.
 
 ## Reproducible Data Pipeline
 
@@ -53,7 +65,9 @@ make data
 make partition SEED=123
 ```
 
-`make data` downloads and cleans CIC-IDS2017 into `data/processed/cicids_clean.parquet`. `make partition` creates six non-IID hospital folders:
+`make install` installs the package plus the `docs` extra used to execute and render notebooks. Docker runtime images install the base package only, so Flower containers do not carry notebook tooling.
+
+`make data` downloads and cleans CIC-IDS2017 into `data/processed/cicids_clean.parquet`. `make partition` creates six non-IID healthcare-network site folders:
 
 ```text
 data/partitions/<hospital_id>/train.parquet
@@ -62,7 +76,7 @@ data/partitions/<hospital_id>/test.parquet
 data/partitions/<hospital_id>/metadata.json
 ```
 
-The default seed is `123`. The partitioning script fits imputation and standardization from the simulated hospital train splits and stores the scaler in `shared/preprocessing/scaler.json`.
+The default seed is `123`. The partitioning script fits imputation and standardization from the simulated site train splits and stores the scaler in `shared/preprocessing/scaler.json`.
 
 ## Running the Demo
 
@@ -92,19 +106,37 @@ Generate row-level predictions from the trained global checkpoint:
 make predict GLOBAL_ROUNDS=3
 ```
 
-For a compact end-to-end demo that launches the Flower topology, runs one global
-round, evaluates the resulting checkpoint, generates sample predictions, captures
-a verbose transcript, refreshes the rendered notebook, and prints the global
-metrics summary:
+For a compact end-to-end demo that launches a local Flower Deployment Runtime
+(real SuperLinks, SuperNodes, and SuperExec processes on localhost), runs one
+global round, evaluates the resulting checkpoint, generates sample predictions,
+captures a verbose transcript, executes and refreshes the rendered notebooks,
+and prints the global metrics summary:
 
 ```bash
 make demo
 ```
 
-Render the component-level walkthrough notebook after a local run:
+`make demo` avoids Docker image rebuilds so the live demo focuses on the
+training workflow. It writes `reports/demo_transcript.txt` with ANSI terminal
+control codes stripped, explicit step separators, the launched Flower runtime
+commands, submitted `flwr run` commands, checkpoint summaries, evaluation
+output, prediction output, notebook rendering, and the final global metrics
+table.
+
+To exercise the containerized deployment route instead, run:
 
 ```bash
-make render-runtime-notebook
+make demo-docker
+```
+
+That target generates a temporary hierarchical Compose file under `reports/`,
+starts the Docker services, waits for the SuperLink control ports, and then
+runs the same demo script against the already-running runtime.
+
+Execute and render the educational notebooks after a local run:
+
+```bash
+make vignettes
 ```
 
 Build the static handbook for GitHub Pages:
@@ -125,7 +157,7 @@ reports/predictions_hospital_eu_01.csv
 reports/demo_transcript.txt
 ```
 
-`shared/` is for checkpoints, metrics, and preprocessing metadata only. It should never contain raw CSV or parquet hospital rows.
+`shared/` is for checkpoints, metrics, and preprocessing metadata only. It should never contain raw CSV or parquet network-flow rows.
 
 ## Baselines
 
@@ -180,7 +212,7 @@ The orchestrator calls `flwr run . <profile> --stream --run-config ...` for ever
 
 ## Rendered Walkthroughs
 
-`notebooks/04_flower_runtime_orchestration.ipynb` is committed with rendered outputs. It shows the running SuperLinks, SuperNodes, SuperExec services, gateway nodes, Flower profiles, exact `flwr run` commands, checkpoint metadata, evaluation summary, and the `shared/` raw-data boundary check.
+The notebooks in `notebooks/` are committed with executed outputs. They inspect the data pipeline, run safe dry-run commands where full training would be too expensive, show the running SuperLinks/SuperNodes/SuperExec services, expose gateway behavior, display checkpoint metadata, show evaluation summaries, and verify the `shared/` raw-data boundary.
 
 The GitHub Pages handbook is generated into `docs/` and is intended to be served from:
 

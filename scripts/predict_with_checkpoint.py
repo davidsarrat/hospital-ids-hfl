@@ -31,7 +31,7 @@ def predict_split(
     threshold: float,
     limit: int,
 ) -> pd.DataFrame:
-    """Load a global checkpoint and produce row-level predictions for one hospital split."""
+    """Load a global checkpoint and produce row-level predictions for one site split."""
 
     data_dir = partitions_dir / hospital_id
     split_path = data_dir / f"{split}.parquet"

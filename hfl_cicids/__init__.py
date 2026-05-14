@@ -1,4 +1,4 @@
-"""Hospital IDS hierarchical federated learning demo."""
+"""Hierarchical federated learning demo for healthcare-network IDS."""
 
 __all__ = ["__version__"]
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -28,7 +29,22 @@ from hfl_cicids.config import (
 )
 
 app = typer.Typer(add_completion=False)
-console = Console()
+console = Console(no_color=True, highlight=False, soft_wrap=True, width=220)
+
+
+def _no_color_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "NO_COLOR": "1",
+            "CLICOLOR": "0",
+            "FORCE_COLOR": "0",
+            "RICH_NO_COLOR": "1",
+            "RICH_FORCE_TERMINAL": "0",
+            "TERM": "dumb",
+        }
+    )
+    return env
 
 
 def _metadata(partition_dir: Path) -> dict:
@@ -41,7 +57,7 @@ def _metadata(partition_dir: Path) -> dict:
 def infer_input_dim(partitions_dir: Path) -> int:
     train_paths = sorted(partitions_dir.glob("*/train.parquet"))
     if not train_paths:
-        raise FileNotFoundError(f"No hospital train.parquet files found under {partitions_dir}")
+        raise FileNotFoundError(f"No site train.parquet files found under {partitions_dir}")
     sample = pd.read_parquet(train_paths[0])
     return len([c for c in sample.columns if c != "label"])
 
@@ -90,9 +106,33 @@ def _run_flower(profile: str, run_config: dict[str, object], dry_run: bool) -> N
         "--run-config",
         _run_config(run_config),
     ]
-    console.print(f"[bold]Running:[/bold] {shlex.join(command)}")
+    console.print()
+    console.print(f"[bold]Submitting Flower run to {profile}[/bold]")
+    console.print(f"$ {shlex.join(command)}")
     if not dry_run:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, env=_no_color_env())
+
+
+def _checkpoint_summary(checkpoint: Path) -> str:
+    metadata_path = checkpoint.with_suffix(".metadata.json")
+    if not checkpoint.exists():
+        return f"Checkpoint missing: {checkpoint}"
+    if not metadata_path.exists():
+        return f"Checkpoint written: {checkpoint}"
+
+    metadata = json.loads(metadata_path.read_text())
+    parts = [f"Checkpoint written: {checkpoint}"]
+    if "num_examples" in metadata:
+        parts.append(f"num_examples={int(metadata['num_examples']):,}")
+    if metadata.get("level") == "regional":
+        parts.extend(
+            [
+                f"val_f1={float(metadata.get('val_f1', 0.0)):.4f}",
+                f"val_roc_auc={float(metadata.get('val_roc_auc', 0.0)):.4f}",
+                f"val_auprc={float(metadata.get('val_auprc', 0.0)):.4f}",
+            ]
+        )
+    return " | ".join(parts)
 
 
 def _regional_run_config(
@@ -207,8 +247,17 @@ def main(
 
     for round_number in range(1, global_rounds + 1):
         console.rule(f"Global round {round_number}")
+        console.print(
+            f"Starting from global checkpoint: {global_checkpoint(round_number - 1, shared_dir)}"
+        )
         for region in selected_regions:
             profile = region.replace("_", "-")
+            console.print()
+            console.print(
+                f"Regional phase: {region} | site_nodes={len(hospitals_by_region(region))} | "
+                f"train_examples={region_train_examples(region, partitions_dir, allow_missing=dry_run):,} | "
+                f"regional_rounds={regional_rounds}"
+            )
             _run_flower(
                 profile=profile,
                 run_config=_regional_run_config(
@@ -226,7 +275,14 @@ def main(
                 ),
                 dry_run=dry_run,
             )
+            if not dry_run:
+                console.print(_checkpoint_summary(region_checkpoint(region, round_number, shared_dir)))
 
+        console.print()
+        console.print(
+            f"Global phase: gateway_nodes={len(selected_regions)} | "
+            f"train_examples={global_train_examples(selected_regions, partitions_dir, allow_missing=dry_run):,}"
+        )
         _run_flower(
             profile="global",
             run_config=_global_run_config(
@@ -241,6 +297,8 @@ def main(
             ),
             dry_run=dry_run,
         )
+        if not dry_run:
+            console.print(_checkpoint_summary(global_checkpoint(round_number, shared_dir)))
 
     console.print(f"[green]Latest global checkpoint: {global_checkpoint(global_rounds, shared_dir)}[/green]")
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -11,14 +10,13 @@ import nbformat as nbf
 import pandas as pd
 import yaml
 
+try:
+    from scripts.ansi import strip_ansi
+except ModuleNotFoundError:  # pragma: no cover - used when run as python scripts/foo.py
+    from ansi import strip_ansi
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "04_flower_runtime_orchestration.ipynb"
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
-
-def strip_ansi(text: str) -> str:
-    return ANSI_RE.sub("", text)
 
 
 def sanitize(text: str) -> str:
@@ -200,7 +198,7 @@ def build_notebook() -> nbf.NotebookNode:
         md(
             "## 1. Running Services\n\n"
             "There are three Flower federations running at the same time: "
-            "`region-eu`, `region-na`, and `global`. Hospital SuperNodes connect to "
+            "`region-eu`, `region-na`, and `global`. Healthcare-site SuperNodes connect to "
             "regional SuperLinks. Region gateway SuperNodes connect only to the global "
             "SuperLink."
         ),
@@ -212,7 +210,7 @@ def build_notebook() -> nbf.NotebookNode:
         md(
             "## 2. Compose Roles\n\n"
             "`SuperLink` services expose the Flower APIs. `SuperExec ServerApp` services "
-            "execute the server application submitted through `flwr run`. Hospital "
+            "execute the server application submitted through `flwr run`. Healthcare-site "
             "`SuperNode` services receive tasks from their regional SuperLink, while "
             "gateway SuperNodes receive tasks from the global SuperLink. ClientApp "
             "SuperExec services execute `hfl_cicids.client_app` next to each SuperNode."
@@ -271,7 +269,7 @@ def build_notebook() -> nbf.NotebookNode:
         ),
         md(
             "## 5. Runtime Logs\n\n"
-            "The hospital SuperNode receives train/evaluate messages from its regional "
+            "The healthcare-site SuperNode receives train/evaluate messages from its regional "
             "SuperLink. The gateway SuperNode receives a train message from the global "
             "SuperLink and returns the regional checkpoint as a model update."
         ),
@@ -299,7 +297,7 @@ def build_notebook() -> nbf.NotebookNode:
         md(
             "## 7. Evaluation Snapshot\n\n"
             "These metrics are from the latest rendered local run. They are evidence that "
-            "the global checkpoint can be loaded and evaluated across the hospital test splits."
+            "the global checkpoint can be loaded and evaluated across the site test splits."
         ),
         stream_cell(
             "import pandas as pd\n"
@@ -310,7 +308,7 @@ def build_notebook() -> nbf.NotebookNode:
         md(
             "## 8. Privacy Boundary Check\n\n"
             "`shared/` is allowed to contain checkpoints, metrics and preprocessing "
-            "metadata. It should not contain hospital CSV/parquet rows."
+            "metadata. It should not contain site CSV/parquet network-flow rows."
         ),
         stream_cell(
             "from pathlib import Path\n"

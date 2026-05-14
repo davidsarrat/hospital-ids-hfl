@@ -55,7 +55,7 @@ def _metricrecord_to_dict(record: object | None) -> dict[str, float | int]:
 
 
 def _run_regional_serverapp(grid: Grid, context: Context) -> None:
-    """Aggregate hospital SuperNode updates inside one region."""
+    """Aggregate healthcare-site SuperNode updates inside one region."""
 
     num_rounds = int(context.run_config["num-server-rounds"])
     lr = float(context.run_config["learning-rate"])

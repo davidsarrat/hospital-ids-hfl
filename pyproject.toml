@@ -22,9 +22,14 @@ dependencies = [
   "kaggle>=1.6",
   "typer>=0.12",
   "rich>=13.0",
-  "pydantic>=2.0",
+  "pydantic>=2.0"
+]
+
+[project.optional-dependencies]
+docs = [
+  "jupyter>=1.0",
   "matplotlib>=3.8",
-  "jupyter>=1.0"
+  "nbclient>=0.10"
 ]
 
 [project.scripts]
@@ -36,6 +41,9 @@ hfl-evaluate = "scripts.evaluate_global_model:app"
 hfl-predict = "scripts.predict_with_checkpoint:app"
 hfl-generate-compose = "scripts.generate_compose:app"
 hfl-configure-flower = "scripts.configure_flower_profiles:app"
+hfl-wait-for-superlinks = "scripts.wait_for_superlinks:app"
+hfl-demo = "scripts.run_demo:app"
+hfl-render-vignettes = "scripts.render_vignettes:main"
 hfl-centralized-mlp = "scripts.centralized_mlp_baseline:app"
 hfl-local-only = "scripts.local_only_baseline:app"
 hfl-flat-fl = "scripts.flat_fl_baseline:app"

@@ -33,3 +33,6 @@ reports/*.metadata.json
 reports/predictions_*.csv
 reports/metrics_summary_global.csv
 reports/demo_transcript.txt
+reports/docker-compose-flat-preview.yml
+reports/docker-compose-hierarchical-demo.yml
+reports/runtime_logs/

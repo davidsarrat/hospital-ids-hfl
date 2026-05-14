@@ -171,7 +171,7 @@ def main(
         "outputs": [str(output), str(summary_output)],
     }
     output.with_suffix(".metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True))
-    console.print(f"[green]Wrote hospital metrics to {output}[/green]")
+    console.print(f"[green]Wrote site metrics to {output}[/green]")
     console.print(f"[green]Wrote global summary to {summary_output}[/green]")
 
 

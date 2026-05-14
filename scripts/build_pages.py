@@ -15,6 +15,11 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import TextLexer, get_lexer_by_name, get_lexer_for_filename
 from pygments.util import ClassNotFound
 
+try:
+    from scripts.ansi import strip_ansi
+except ModuleNotFoundError:  # pragma: no cover - used when run as python scripts/foo.py
+    from ansi import strip_ansi
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -161,7 +166,7 @@ def topology_svg() -> str:
   <text x="705" y="248" text-anchor="middle">NA gateway</text>
 
   <rect x="30" y="400" width="1000" height="120" rx="8" fill="#f8fafc" stroke="#cbd5e1" />
-  <text x="55" y="438" class="svg-title">Layer 1: local hospital SuperNodes</text>
+  <text x="55" y="438" class="svg-title">Layer 1: local healthcare-site SuperNodes</text>
   <rect x="90" y="462" width="130" height="36" rx="6" fill="#ffffff" stroke="#64748b" />
   <text x="155" y="486" text-anchor="middle">EU 01</text>
   <rect x="235" y="462" width="130" height="36" rx="6" fill="#ffffff" stroke="#64748b" />
@@ -185,7 +190,7 @@ def topology_svg() -> str:
   <path d="M710 298 C645 298, 645 250, 610 244" stroke="#0f766e" stroke-width="3" marker-end="url(#arrow)" fill="none" />
   <path d="M505 222 C505 178, 500 160, 500 139" stroke="#0f766e" stroke-width="3" marker-end="url(#arrow)" fill="none" />
   <path d="M705 222 C705 178, 580 160, 570 139" stroke="#0f766e" stroke-width="3" marker-end="url(#arrow)" fill="none" />
-  <text x="55" y="548" class="svg-note">Raw parquet rows stay mounted only inside each hospital ClientApp container. The global layer receives regional checkpoints through gateway SuperNodes.</text>
+  <text x="55" y="548" class="svg-note">Network-flow parquet rows stay mounted only inside each site ClientApp container. The global layer receives regional checkpoints through gateway SuperNodes.</text>
 </svg>
 </figure>
 """
@@ -194,7 +199,7 @@ def topology_svg() -> str:
 def partition_chart() -> str:
     metadata_paths = sorted((ROOT / "data" / "partitions").glob("*/metadata.json"))
     if not metadata_paths:
-        return callout("Partition chart unavailable", "Run <code>make partition SEED=123</code> to generate hospital metadata.")
+        return callout("Partition chart unavailable", "Run <code>make partition SEED=123</code> to generate site metadata.")
     rows = []
     max_total = 1
     for path in metadata_paths:
@@ -217,8 +222,8 @@ def partition_chart() -> str:
         y += 42
     height = y + 35
     return (
-        '<figure class="chart"><figcaption>Training rows per hospital after non-IID partitioning</figcaption>'
-        f'<svg viewBox="0 0 1040 {height}" role="img" aria-label="Hospital partition chart">'
+        '<figure class="chart"><figcaption>Training network-flow rows per simulated healthcare site after non-IID partitioning</figcaption>'
+        f'<svg viewBox="0 0 1040 {height}" role="img" aria-label="Healthcare-site partition chart">'
         '<text x="190" y="28" class="chart-label">BENIGN</text><rect x="250" y="15" width="20" height="14" fill="#0f766e" />'
         '<text x="295" y="28" class="chart-label">ATTACK</text><rect x="355" y="15" width="20" height="14" fill="#dc2626" />'
         + "".join(svg_rows)
@@ -269,21 +274,29 @@ def predictions_table(limit: int = 12) -> str:
                 esc(row.get("correct", "")),
             ]
         )
-    return table(["row", "hospital", "label", "prob_attack", "prediction", "correct"], display_rows)
+    return table(["row", "site", "label", "prob_attack", "prediction", "correct"], display_rows)
 
 
 def demo_transcript(max_lines: int = 90) -> str:
     path = REPORTS_DIR / "demo_transcript.txt"
     if not path.exists():
         return callout("Demo transcript unavailable", "Run <code>make demo</code> to capture the training/evaluation transcript.")
-    lines = path.read_text(errors="replace").splitlines()
+    lines = strip_ansi(path.read_text(errors="replace")).splitlines()
     interesting = [
         line
         for line in lines
         if line.strip()
         and (
             "Running:" in line
+            or line.startswith("=")
+            or line.startswith("Step ")
+            or line.startswith("Demo scope")
+            or line.startswith("$ ")
             or "Global round" in line
+            or "Regional phase:" in line
+            or "Global phase:" in line
+            or "Submitting Flower run" in line
+            or "Checkpoint written:" in line
             or "Wrote" in line
             or "Latest global checkpoint" in line
             or "weighted_f1" in line
@@ -365,6 +378,12 @@ def render_shell(title: str, body: str, active: str, prefix: str) -> str:
 """
 
 
+def write_clean_text(path: Path, text: str) -> None:
+    """Write generated text without trailing whitespace noise."""
+
+    path.write_text("\n".join(line.rstrip() for line in text.splitlines()) + "\n")
+
+
 def hero(title: str, subtitle: str) -> str:
     return f"<section class=\"hero\"><p class=\"eyebrow\">Handbook</p><h1>{esc(title)}</h1><p>{subtitle}</p></section>"
 
@@ -384,7 +403,10 @@ def write_page(page: Page, index: int) -> None:
         next_link = f"<a href=\"{next_page.slug}.html\">Next: {esc(next_page.title)}</a>"
     pager = f"<div class=\"pager\">{prev_link}<span></span>{next_link}</div>"
     body = page_intro(page) + page.body + pager
-    (EPISODES_DIR / f"{page.slug}.html").write_text(render_shell(page.title, body, page.slug, "../"))
+    write_clean_text(
+        EPISODES_DIR / f"{page.slug}.html",
+        render_shell(page.title, body, page.slug, "../"),
+    )
 
 
 def make_index() -> str:
@@ -399,8 +421,14 @@ def make_index() -> str:
         )
     body = hero(
         "Deployment handbook: Hierarchical Flower with CIC-IDS2017",
-        "A from-scratch guide to understand and run the demo: data, Flower nodes, gateways, "
+        "A from-scratch guide to understand and run the demo: network-flow data, Flower nodes, gateways, "
         "orchestration, evaluation, and privacy boundaries.",
+    )
+    body += callout(
+        "Data framing",
+        "CIC-IDS2017 is network intrusion-detection telemetry. It is not a medical dataset and "
+        "contains no patient records, diagnoses, imaging, lab results, prescriptions, or clinical "
+        "decision variables. In this repository, hospitals are simulated healthcare network operators.",
     )
     body += callout(
         "Fast path",
@@ -415,7 +443,7 @@ def make_index() -> str:
     body += p(
         "The rendered notebooks are treated as labs attached to the chapters, not as a separate "
         "parallel story. Start with the book chapters for the explanation, then open the matching "
-        "lab when you want to inspect the actual rendered output."
+        "lab when you want to inspect executed notebook output."
     )
     body += table(
         ["Lab", "Use it after", "Render"],
@@ -437,7 +465,7 @@ def make_index() -> str:
     body += h2("Full command path")
     body += cmd(
         """
-python -m pip install -e .
+python -m pip install -e ".[docs]"
 make data
 make partition SEED=123
 make compose
@@ -446,14 +474,15 @@ make up
 make train GLOBAL_ROUNDS=3 REGIONAL_ROUNDS=2
 make eval GLOBAL_ROUNDS=3
 make predict GLOBAL_ROUNDS=3
-make render-runtime-notebook
+make vignettes
 make pages
 """
     )
     body += h2("Direct demo")
     body += p(
-        "For a compact run that starts the topology, launches one hierarchical round, "
-        "evaluates the checkpoint, and prints the metrics summary at the end:"
+        "For a compact run that starts the local Flower Deployment Runtime, launches one "
+        "hierarchical round, evaluates the checkpoint, generates predictions, executes the "
+        "vignettes, rebuilds the handbook, and prints the metrics summary at the end:"
     )
     body += cmd("make demo")
     return render_shell("Home", body, "index", "")
@@ -463,13 +492,19 @@ EPISODES: list[Page] = [
     Page(
         slug="00-roadmap",
         title="00 - Mental model and topology",
-        summary="The complete architecture before touching commands: hospitals, regions, gateways, and the global hub.",
+        summary="The complete architecture before touching commands: healthcare network sites, regions, gateways, and the global hub.",
         body=(
             h2("Demo objective")
             + p(
-                "This project simulates hospitals collaborating to train an intrusion detector "
-                "on CIC-IDS2017 network-flow data. Each hospital keeps its local partition. "
-                "Regions aggregate hospital models, and the global layer aggregates regional models."
+                "This project simulates healthcare organizations collaborating to train an intrusion "
+                "detector on CIC-IDS2017 network-flow telemetry. Each site keeps its local network-flow "
+                "partition. Regions aggregate site models, and the global layer aggregates regional models."
+            )
+            + callout(
+                "Not clinical data",
+                "The hospital naming convention is an infrastructure scenario. The dataset is not "
+                "medical: there are no patients, diagnoses, scans, lab values, prescriptions, or "
+                "clinical outcomes. The task is benign-vs-attack classification for network flows.",
             )
             + topology_svg()
             + h2("Roadmap")
@@ -479,7 +514,7 @@ EPISODES: list[Page] = [
                     "Download and clean CIC-IDS2017 without committing raw data.",
                     "Create six non-IID partitions with seed 123.",
                     "Start SuperLinks, SuperNodes, and SuperExecs with Docker Compose.",
-                    "Run regional federations with hospitals as clients.",
+                    "Run regional federations with healthcare-network sites as clients.",
                     "Run the global federation with regional gateways as clients.",
                     "Evaluate the global checkpoint and review privacy boundaries.",
                 ]
@@ -488,9 +523,9 @@ EPISODES: list[Page] = [
             + table(
                 ["Path", "Responsibility"],
                 [
-                    ["<code>hfl_cicids/config.py</code>", "Simulated topology: hospitals, regions, paths, and checkpoints."],
-                    ["<code>hfl_cicids/task.py</code>", "PyTorch dataset, MLP, and local training loop."],
-                    ["<code>hfl_cicids/client_app.py</code>", "ClientApp for hospital nodes and regional gateway nodes."],
+                    ["<code>hfl_cicids/config.py</code>", "Simulated topology: sites, regions, paths, and checkpoints."],
+                    ["<code>hfl_cicids/task.py</code>", "PyTorch network-flow dataset, MLP, and local training loop."],
+                    ["<code>hfl_cicids/client_app.py</code>", "ClientApp for site nodes and regional gateway nodes."],
                     ["<code>hfl_cicids/server_app.py</code>", "Regional/global ServerApp with FedAvg."],
                     ["<code>hfl_cicids/checkpointing.py</code>", "Loads and saves Flower/PyTorch checkpoints."],
                     ["<code>hfl_cicids/metrics.py</code>", "Classification metrics and error rates."],
@@ -499,12 +534,14 @@ EPISODES: list[Page] = [
                     ["<code>scripts/make_partitions.py</code>", "Non-IID partitioning with seed and train-only scaler."],
                     ["<code>scripts/generate_compose.py</code>", "Generates SuperLinks, SuperNodes, and SuperExecs."],
                     ["<code>scripts/configure_flower_profiles.py</code>", "Writes local Flower CLI profiles."],
+                    ["<code>scripts/local_flower_runtime.py</code>", "Starts the local process-based Flower demo runtime."],
+                    ["<code>scripts/wait_for_superlinks.py</code>", "Waits for local SuperLink control ports before submitting Flower runs."],
                     ["<code>scripts/run_hierarchical_rounds.py</code>", "Orchestrator that calls <code>flwr run</code>."],
-                    ["<code>scripts/evaluate_global_model.py</code>", "Evaluates checkpoints against each hospital test split."],
+                    ["<code>scripts/evaluate_global_model.py</code>", "Evaluates checkpoints against each site test split."],
                     ["<code>scripts/centralized_mlp_baseline.py</code>", "Non-federated centralized baseline."],
-                    ["<code>scripts/local_only_baseline.py</code>", "Per-hospital baseline without collaboration."],
-                    ["<code>scripts/flat_fl_baseline.py</code>", "Flat Flower baseline with all six hospitals."],
-                    ["<code>scripts/render_runtime_notebook.py</code>", "Regenerates the rendered runtime notebook."],
+                    ["<code>scripts/local_only_baseline.py</code>", "Per-site baseline without collaboration."],
+                    ["<code>scripts/flat_fl_baseline.py</code>", "Flat Flower baseline with all six sites."],
+                    ["<code>scripts/render_vignettes.py</code>", "Executes the educational notebooks and refreshes their outputs."],
                     ["<code>scripts/build_pages.py</code>", "Builds this handbook and HTML renders in <code>docs/</code>."],
                     ["<code>docs/</code>", "Static GitHub Pages book."],
                 ],
@@ -512,15 +549,15 @@ EPISODES: list[Page] = [
             + h2("The invariant to keep in mind")
             + p(
                 "The architecture is only hierarchical if every layer exposes an aggregate to the "
-                "layer above it. Hospitals expose model updates to a regional SuperLink; a region "
+                "layer above it. Healthcare-network sites expose model updates to a regional SuperLink; a region "
                 "exposes one regional checkpoint through a gateway SuperNode; the global SuperLink "
-                "never sees hospital partitions or hospital SuperNodes directly."
+                "never sees site partitions or site SuperNodes directly."
             )
             + notes(
                 [
                     "The region is a Flower federation in its own right, not just a Python function.",
                     "The global layer is another Flower federation whose clients are gateways.",
-                    "Weighted averaging works because hospitals and gateways both return <code>num-examples</code>.",
+                    "Weighted averaging works because sites and gateways both return <code>num-examples</code>.",
                     "The <code>shared/</code> directory is for model/checkpoint artifacts, not raw rows.",
                 ],
                 "Core rules",
@@ -547,7 +584,7 @@ EPISODES: list[Page] = [
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
-python -m pip install -e .
+python -m pip install -e ".[docs]"
 """
             )
             + callout(
@@ -563,29 +600,34 @@ make partition SEED=123
 """
             )
             + h2("Main targets")
-            + snippet("Makefile", 1, 74)
+            + snippet("Makefile", 1, 85)
             + notes(
                 [
-                    f"{line_ref('Makefile', 18, 23, 'Lines 18-23')} separate download/cleaning from partitioning, so data preparation can be rerun without rebuilding Docker.",
-                    f"{line_ref('Makefile', 37, 40, 'Lines 37-40')} call the hierarchical orchestrator for normal training runs.",
-                    f"{line_ref('Makefile', 52, 74, 'Lines 52-74')} define the compact demo: reset the runtime, train, evaluate, generate predictions, rebuild educational output, then print the CSV summary.",
+                    f"{line_ref('Makefile', 20, 25, 'Lines 20-25')} separate download/cleaning from partitioning, so data preparation can be rerun without rebuilding Docker.",
+                    f"{line_ref('Makefile', 39, 42, 'Lines 39-42')} call the hierarchical orchestrator for normal training runs.",
+                    f"{line_ref('Makefile', 54, 58, 'Lines 54-58')} define the compact local demo and delegate the visible transcript to <code>scripts/run_demo.py</code>.",
+                    f"{line_ref('Makefile', 60, 70, 'Lines 60-70')} keep the Docker route available through <code>make demo-docker</code> without making it the default live demo path.",
+                    f"{line_ref('Makefile', 75, 77, 'Lines 75-77')} execute the educational notebooks and rebuild GitHub Pages without retraining.",
                     "The demo target assumes the dataset and partitions already exist. This avoids downloading a large dataset every time someone wants to show the algorithm running.",
                 ]
             )
             + h2("Direct demo")
             + p(
-                "Once data and partitions exist, <code>make demo</code> starts Docker, runs one "
-                "global round with one regional round, evaluates, and refreshes the renders."
+                "Once data and partitions exist, <code>make demo</code> starts a local Flower "
+                "Deployment Runtime with real SuperLinks, SuperNodes, and SuperExec processes. "
+                "It runs one global round with one regional round, evaluates, predicts, executes "
+                "the notebook vignettes, and refreshes the renders."
             )
             + cmd("make demo")
             + h2("Package dependencies")
-            + snippet("pyproject.toml", 15, 28)
+            + snippet("pyproject.toml", 15, 35)
             + notes(
                 [
                     f"{line_ref('pyproject.toml', 16, label='Line 16')} pins Flower to the version used for the deployment runtime demo.",
                     f"{line_ref('pyproject.toml', 17, label='Line 17')} keeps the model in PyTorch so FedAvg can average tensors directly.",
                     f"{line_ref('pyproject.toml', 20, 21, 'Lines 20-21')} provide preprocessing and parquet IO.",
                     f"{line_ref('pyproject.toml', 22, label='Line 22')} keeps the dataset download reproducible through Kaggle.",
+                    f"{line_ref('pyproject.toml', 28, 33, 'Lines 28-33')} keep notebook rendering dependencies in the <code>docs</code> extra instead of the Flower runtime images.",
                 ]
             )
         ),
@@ -593,7 +635,7 @@ make partition SEED=123
     Page(
         slug="02-data-pipeline",
         title="02 - Reproducible data pipeline",
-        summary="How CIC-IDS2017 CSVs become six simulated hospital partitions with a non-IID split.",
+        summary="How CIC-IDS2017 CSVs become six simulated healthcare-network site partitions with a non-IID split.",
         body=(
             h2("Cleaning")
             + p(
@@ -613,24 +655,24 @@ make partition SEED=123
             )
             + h2("Non-IID split with seed 123")
             + p(
-                "Partitioning assigns attack groups to hospitals with biased weights. This makes "
-                "each hospital see a different distribution, which is the interesting case for FL."
+                "Partitioning assigns attack groups to healthcare-network sites with biased weights. "
+                "This makes each site see a different distribution, which is the interesting case for FL."
             )
-            + snippet("scripts/make_partitions.py", 31, 72, "Attack grouping and hospital preferences")
+            + snippet("scripts/make_partitions.py", 31, 72, "Attack grouping and site preferences")
             + snippet("scripts/make_partitions.py", 112, 128, "Dirichlet assignment by group")
             + notes(
                 [
                     f"{line_ref('scripts/make_partitions.py', 31, 51, 'Lines 31-51')} compress many CIC-IDS2017 attack strings into stable attack groups.",
-                    f"{line_ref('scripts/make_partitions.py', 60, 72, 'Lines 60-72')} combine a Dirichlet draw with each hospital's preferred attack groups. This creates non-IID partitions without hand-picking every row.",
+                    f"{line_ref('scripts/make_partitions.py', 60, 72, 'Lines 60-72')} combine a Dirichlet draw with each site's preferred attack groups. This creates non-IID partitions without hand-picking every row.",
                     f"{line_ref('scripts/make_partitions.py', 112, 128, 'Lines 112-128')} assigns rows group by group and repairs minimum benign/attack coverage where possible.",
-                    "The seed controls the random generator, so the same processed parquet produces the same hospital partitions when <code>SEED=123</code> is used.",
+                    "The seed controls the random generator, so the same processed parquet produces the same site partitions when <code>SEED=123</code> is used.",
                 ],
                 "Why this split matters",
             )
             + h2("Train-only scaling")
             + p(
                 "The MVP demo fits imputation and standardization from the simulated train splits. "
-                "It then transforms train, validation, and test for every hospital with those values."
+                "It then transforms train, validation, and test for every site with those values."
             )
             + snippet("scripts/make_partitions.py", 167, 193)
             + notes(
@@ -656,13 +698,13 @@ shared/preprocessing/scaler.json
             + p(
                 "The chart below is generated from the local <code>metadata.json</code> files created "
                 "by the partitioning script. The uneven bar sizes and different attack ratios are "
-                "intentional: they show that hospitals do not receive identical data distributions."
+                "intentional: they show that sites do not receive identical network-flow distributions."
             )
             + partition_chart()
             + lab_card(
                 "Hands-on lab: dataset and partitioning",
                 "Open the rendered notebook when you want to see the dataset inspection workflow, "
-                "partition metadata tables, and the commands used to build the local hospital folders.",
+                "partition metadata tables, and the commands used to build the local site folders.",
                 "../renders/00_dataset_and_partitioning.html",
             )
         ),
@@ -677,32 +719,34 @@ shared/preprocessing/scaler.json
                 ["Component", "In this demo"],
                 [
                     ["SuperLink", "The hub of one federation. There is one per region and one global hub."],
-                    ["SuperNode", "A client connected to a SuperLink. It can be a hospital or a gateway."],
+                    ["SuperNode", "A client connected to a SuperLink. It can be a healthcare-network site or a gateway."],
                     ["SuperExec ServerApp", "The process that executes <code>hfl_cicids.server_app</code>."],
                     ["SuperExec ClientApp", "The process that executes <code>hfl_cicids.client_app</code> next to a SuperNode."],
                 ],
             )
             + h2("SuperLink and ServerApp")
-            + snippet("scripts/generate_compose.py", 43, 71)
+            + snippet("scripts/generate_compose.py", 20, 70)
             + notes(
                 [
-                    f"{line_ref('scripts/generate_compose.py', 43, 52, 'Lines 43-52')} create one SuperLink service and expose the Control API port to the host.",
-                    f"{line_ref('scripts/generate_compose.py', 56, 70, 'Lines 56-70')} create the ServerApp SuperExec. It connects to the generated SuperLink AppIO API, for example <code>region-eu-superlink:9091</code>.",
+                    f"{line_ref('scripts/generate_compose.py', 20, 40, 'Lines 20-40')} define one shared application SuperExec image so Compose does not rebuild identical Python environments for every service.",
+                    f"{line_ref('scripts/generate_compose.py', 44, 53, 'Lines 44-53')} create one SuperLink service and expose the Control API port to the host.",
+                    f"{line_ref('scripts/generate_compose.py', 57, 70, 'Lines 57-70')} create the ServerApp SuperExec. It connects to the generated SuperLink AppIO API, for example <code>region-eu-superlink:9091</code>.",
                     "The SuperLink is the coordination hub; the ServerApp SuperExec is the worker process that actually runs the application code submitted by <code>flwr run</code>.",
                 ]
             )
-            + h2("Hospital SuperNode")
+            + h2("Site SuperNode")
             + p(
-                "The hospital connects to its regional SuperLink, and its ClientApp mounts only "
-                "its own local folder at <code>/data:ro</code>."
+                "The site SuperNode represents a healthcare organization operating a local network. It connects to its "
+                "regional SuperLink, and its ClientApp mounts only its own local network-flow "
+                "partition at <code>/data:ro</code>."
             )
             + snippet("scripts/generate_compose.py", 74, 107)
             + notes(
                 [
-                    f"{line_ref('scripts/generate_compose.py', 78, 89, 'Lines 78-89')} start a hospital SuperNode and point it to the regional SuperLink Fleet API.",
+                    f"{line_ref('scripts/generate_compose.py', 78, 89, 'Lines 78-89')} start a site SuperNode and point it to the regional SuperLink Fleet API.",
                     f"{line_ref('scripts/generate_compose.py', 88, 89, 'Lines 88-89')} pass node config into Flower. The ClientApp later reads <code>role</code>, <code>region</code>, <code>hospital-id</code>, and <code>data-dir</code> from this config.",
-                    f"{line_ref('scripts/generate_compose.py', 93, 104, 'Lines 93-104')} start the ClientApp SuperExec and mount only this hospital's partition at <code>/data:ro</code>.",
-                    "Because each hospital service gets a different host folder mounted into <code>/data</code>, the ClientApp code can be shared while the data boundary remains per-hospital.",
+                    f"{line_ref('scripts/generate_compose.py', 93, 104, 'Lines 93-104')} start the ClientApp SuperExec and mount only this site's partition at <code>/data:ro</code>.",
+                    "Because each site service gets a different host folder mounted into <code>/data</code>, the ClientApp code can be shared while the data boundary remains per-site.",
                 ]
             )
             + h2("RegionGateway SuperNode")
@@ -710,13 +754,13 @@ shared/preprocessing/scaler.json
                 "The gateway connects to the global SuperLink and mounts <code>/shared</code>, not "
                 "<code>/data</code>. This lets it return regional checkpoints without reading raw rows."
             )
-            + snippet("scripts/generate_compose.py", 110, 143)
+            + snippet("scripts/generate_compose.py", 109, 140)
             + notes(
                 [
-                    f"{line_ref('scripts/generate_compose.py', 113, 124, 'Lines 113-124')} define a gateway SuperNode connected to <code>global-superlink:9092</code>, not to a regional SuperLink.",
-                    f"{line_ref('scripts/generate_compose.py', 123, 124, 'Lines 123-124')} mark the node as <code>role=\"region-gateway\"</code>, which switches the ClientApp into gateway behavior.",
-                    f"{line_ref('scripts/generate_compose.py', 125, 140, 'Lines 125-140')} mount <code>./shared:/shared</code> only. There is no hospital <code>/data</code> mount for a gateway.",
-                    "This is the privacy boundary that makes the global layer see regional models rather than raw local rows.",
+                    f"{line_ref('scripts/generate_compose.py', 112, 123, 'Lines 112-123')} define a gateway SuperNode connected to <code>global-superlink:9092</code>, not to a regional SuperLink.",
+                    f"{line_ref('scripts/generate_compose.py', 122, 123, 'Lines 122-123')} mark the node as <code>role=\"region-gateway\"</code>, which switches the ClientApp into gateway behavior.",
+                    f"{line_ref('scripts/generate_compose.py', 124, 139, 'Lines 124-139')} mount <code>./shared:/shared</code> only. There is no site <code>/data</code> mount for a gateway.",
+                    "This is the privacy boundary that makes the global layer see regional models rather than raw local network-flow rows.",
                 ]
             )
             + h2("Real render")
@@ -735,8 +779,8 @@ shared/preprocessing/scaler.json
     ),
     Page(
         slug="04-model-clientapp",
-        title="04 - Model and hospital ClientApp",
-        summary="How local parquet is loaded, the MLP is trained, and an update is returned to Flower.",
+        title="04 - Model and site ClientApp",
+        summary="How local network-flow parquet is loaded, the MLP is trained, and an update is returned to Flower.",
         body=(
             h2("Dataset and MLP")
             + p(
@@ -757,25 +801,26 @@ shared/preprocessing/scaler.json
             + notes(
                 [
                     f"{line_ref('hfl_cicids/task.py', 88, 97, 'Lines 88-97')} compute <code>pos_weight</code> to reduce the impact of class imbalance during binary classification.",
-                    f"{line_ref('hfl_cicids/task.py', 110, 112, 'Lines 110-112')} create the weighted BCE loss and AdamW optimizer used by every hospital.",
-                    f"{line_ref('hfl_cicids/task.py', 117, 129, 'Lines 117-129')} run the local epochs. No server or other hospital data is accessed here.",
+                    f"{line_ref('hfl_cicids/task.py', 110, 112, 'Lines 110-112')} create the weighted BCE loss and AdamW optimizer used by every site.",
+                    f"{line_ref('hfl_cicids/task.py', 117, 129, 'Lines 117-129')} run the local epochs. No server or other site's network-flow rows are accessed here.",
                     "This function knows nothing about Flower. That makes the ML task testable on its own and keeps Flower-specific logic in the ClientApp.",
                 ]
             )
-            + h2("Hospital ClientApp")
+            + h2("Site ClientApp")
             + p(
-                "When the node role is hospital, Flower sends initial arrays. The ClientApp loads "
-                "those weights, trains on <code>/data/train.parquet</code>, evaluates on validation, "
+                "When the node role is hospital, the service is acting as a healthcare-network site. "
+                "Flower sends initial arrays. The ClientApp loads those weights, trains on "
+                "<code>/data/train.parquet</code>, evaluates on validation, "
                 "and returns arrays plus metrics. The <code>num-examples</code> key enables weighted FedAvg."
             )
             + snippet("hfl_cicids/client_app.py", 32, 84)
             + notes(
                 [
-                    f"{line_ref('hfl_cicids/client_app.py', 32, 41, 'Lines 32-41')} route by node role. Hospitals train; gateways return regional checkpoints.",
-                    f"{line_ref('hfl_cicids/client_app.py', 44, 55, 'Lines 44-55')} load only the mounted hospital data directory and the arrays sent by Flower.",
+                    f"{line_ref('hfl_cicids/client_app.py', 32, 41, 'Lines 32-41')} route by node role. Sites train; gateways return regional checkpoints.",
+                    f"{line_ref('hfl_cicids/client_app.py', 44, 55, 'Lines 44-55')} load only the mounted site data directory and the arrays sent by Flower.",
                     f"{line_ref('hfl_cicids/client_app.py', 56, 64, 'Lines 56-64')} execute local training and validation.",
                     f"{line_ref('hfl_cicids/client_app.py', 66, 80, 'Lines 66-80')} return two records: <code>arrays</code> for model parameters and <code>metrics</code> for aggregation metadata.",
-                    f"{line_ref('hfl_cicids/client_app.py', 68, label='Line 68')} is critical: Flower's FedAvg uses <code>num-examples</code> as the weight for this hospital update.",
+                    f"{line_ref('hfl_cicids/client_app.py', 68, label='Line 68')} is critical: Flower's FedAvg uses <code>num-examples</code> as the weight for this site update.",
                 ]
             )
         ),
@@ -783,7 +828,7 @@ shared/preprocessing/scaler.json
     Page(
         slug="05-serverapp-fedavg",
         title="05 - Regional ServerApp and FedAvg",
-        summary="How the regional server aggregates hospitals and writes regional checkpoints.",
+        summary="How the regional server aggregates healthcare-network sites and writes regional checkpoints.",
         body=(
             h2("Shared entry point")
             + p(
@@ -795,19 +840,19 @@ shared/preprocessing/scaler.json
                 [
                     f"{line_ref('hfl_cicids/server_app.py', 16, 25, 'Lines 16-25')} choose regional or global behavior from <code>context.run_config['level']</code>.",
                     f"{line_ref('hfl_cicids/server_app.py', 28, 41, 'Lines 28-41')} create initial arrays from the configured input dimension and optionally load a previous checkpoint.",
-                    "This is how a later global round can seed regional hospital training with the previous global model.",
+                    "This is how a later global round can seed regional site training with the previous global model.",
                 ]
             )
             + h2("Regional federation")
             + p(
                 "Each region uses FedAvg with <code>weighted_by_key='num-examples'</code>. "
-                "The clients are the hospitals connected to the regional SuperLink."
+                "The clients are the healthcare-network sites connected to the regional SuperLink."
             )
             + snippet("hfl_cicids/server_app.py", 57, 116)
             + notes(
                 [
                     f"{line_ref('hfl_cicids/server_app.py', 64, 71, 'Lines 64-71')} instantiate FedAvg and explicitly set <code>weighted_by_key=\"num-examples\"</code>.",
-                    f"{line_ref('hfl_cicids/server_app.py', 73, 83, 'Lines 73-83')} start the Flower strategy on the regional grid. The clients sampled here are hospital SuperNodes connected to the regional SuperLink.",
+                    f"{line_ref('hfl_cicids/server_app.py', 73, 83, 'Lines 73-83')} start the Flower strategy on the regional grid. The clients sampled here are site SuperNodes connected to the regional SuperLink.",
                     f"{line_ref('hfl_cicids/server_app.py', 85, 90, 'Lines 85-90')} capture the final aggregated train/evaluate metrics from Flower's <code>Result</code> object.",
                     f"{line_ref('hfl_cicids/server_app.py', 92, 116, 'Lines 92-116')} save the aggregated regional checkpoint plus metadata needed by the gateway.",
                     f"{line_ref('hfl_cicids/server_app.py', 102, label='Line 102')} records the region's training-example total so the global layer can weight this region correctly.",
@@ -823,7 +868,7 @@ theta_r = sum_h (n_h / N_r) * theta_h
             )
             + lab_card(
                 "Hands-on lab: flat FL comparison",
-                "The flat baseline lab shows a one-layer Flower federation where all six hospitals "
+                "The flat baseline lab shows a one-layer Flower federation where all six sites "
                 "connect to one SuperLink. Compare it with the regional/global split explained here.",
                 "../renders/02_flat_fl_baseline.html",
             )
@@ -832,7 +877,7 @@ theta_r = sum_h (n_h / N_r) * theta_h
     Page(
         slug="06-gateway-global",
         title="06 - Regional gateway and global aggregation",
-        summary="The key piece: the global layer sees regions as clients, not hospitals.",
+        summary="The key piece: the global layer sees regions as clients, not individual sites.",
         body=(
             h2("ClientApp in gateway mode")
             + p(
@@ -857,7 +902,7 @@ theta_r = sum_h (n_h / N_r) * theta_h
             + snippet("hfl_cicids/server_app.py", 119, 155)
             + notes(
                 [
-                    f"{line_ref('hfl_cicids/server_app.py', 124, 131, 'Lines 124-131')} configure FedAvg at the global level. Here the clients are gateway SuperNodes, not hospitals.",
+                    f"{line_ref('hfl_cicids/server_app.py', 124, 131, 'Lines 124-131')} configure FedAvg at the global level. Here the clients are gateway SuperNodes, not individual sites.",
                     f"{line_ref('hfl_cicids/server_app.py', 133, 142, 'Lines 133-142')} run exactly one global aggregation round for each outer loop iteration.",
                     f"{line_ref('hfl_cicids/server_app.py', 144, 155, 'Lines 144-155')} save the global checkpoint and metadata after the gateway updates are aggregated.",
                     f"{line_ref('hfl_cicids/server_app.py', 152, label='Line 152')} records the global training-example total, which should match the sum of regional totals.",
@@ -957,15 +1002,15 @@ docker compose logs --tail=80 global-superlink
             + snippet("scripts/evaluate_global_model.py", 94, 176)
             + notes(
                 [
-                    f"{line_ref('scripts/evaluate_global_model.py', 31, 67, 'Lines 31-67')} load one checkpoint and evaluate it separately on every hospital split.",
-                    f"{line_ref('scripts/evaluate_global_model.py', 70, 91, 'Lines 70-91')} reduce per-hospital rows into weighted and macro summaries.",
-                    f"{line_ref('scripts/evaluate_global_model.py', 161, 166, 'Lines 161-166')} write both detailed hospital metrics and a global summary CSV.",
+                    f"{line_ref('scripts/evaluate_global_model.py', 31, 67, 'Lines 31-67')} load one checkpoint and evaluate it separately on every site split.",
+                    f"{line_ref('scripts/evaluate_global_model.py', 70, 91, 'Lines 70-91')} reduce per-site rows into weighted and macro summaries.",
+                    f"{line_ref('scripts/evaluate_global_model.py', 161, 166, 'Lines 161-166')} write both detailed site metrics and a global summary CSV.",
                 ]
             )
             + h2("Prediction from a trained checkpoint")
             + p(
                 "Evaluation summarizes a checkpoint over many rows. Prediction is the smaller "
-                "inference path: load one checkpoint, take rows from one hospital split, compute "
+                "inference path: load one checkpoint, take rows from one site split, compute "
                 "<code>sigmoid(logit)</code>, threshold it, and write row-level predictions."
             )
             + snippet("scripts/predict_with_checkpoint.py", 25, 65)
@@ -982,8 +1027,8 @@ docker compose logs --tail=80 global-superlink
             + ul(
                 [
                     "Raw data is not uploaded to <code>shared/</code> or to Git.",
-                    "Hospitals mount <code>/data</code> read-only.",
-                    "The gateway mounts checkpoints, not hospital partitions.",
+                    "Site ClientApps mount <code>/data</code> read-only.",
+                    "The gateway mounts checkpoints, not site partitions.",
                     "Model updates can still leak information. This is not differential privacy.",
                 ]
             )
@@ -1006,18 +1051,19 @@ docker compose logs --tail=80 global-superlink
             h2("One command for the live demo")
             + p(
                 "The easiest way to present the system is <code>make demo</code>. It assumes the "
-                "dataset has already been downloaded and partitioned. It then regenerates Compose, "
-                "configures Flower profiles, starts containers, runs one hierarchical training cycle, "
-                "evaluates the global checkpoint, produces a small prediction table, refreshes notebook "
-                "renders, rebuilds this handbook, and prints the global metrics summary."
+                "dataset has already been downloaded and partitioned. It configures Flower profiles, "
+                "starts a local Flower Deployment Runtime with real SuperLinks, SuperNodes, and SuperExecs, "
+                "runs one hierarchical training cycle, "
+                "evaluates the global checkpoint, produces a small prediction table, executes notebook "
+                "vignettes, rebuilds this handbook, and prints the global metrics summary."
             )
-            + snippet("Makefile", 52, 74, "make demo target")
+            + snippet("Makefile", 54, 70, "make demo targets")
             + notes(
                 [
-                    f"{line_ref('Makefile', 52, 59, 'Lines 52-59')} start from a clean Docker federation, wait for the SuperLinks, reset demo checkpoints, and create a fresh transcript.",
-                    f"{line_ref('Makefile', 60, 63, 'Lines 60-63')} run the regional and global Flower federations through the orchestrator while appending logs to <code>reports/demo_transcript.txt</code>.",
-                    f"{line_ref('Makefile', 64, 70, 'Lines 64-70')} evaluate the produced global checkpoint and demonstrate inference by writing row-level predictions for one hospital.",
-                    f"{line_ref('Makefile', 71, 74, 'Lines 71-74')} refresh the educational artifacts and print the final metrics CSV.",
+                    f"{line_ref('Makefile', 54, 58, 'Lines 54-58')} run the fast local demo, which avoids Docker image rebuilds while still using Flower runtime processes.",
+                    f"{line_ref('Makefile', 60, 70, 'Lines 60-70')} define the optional containerized demo for environments where the Docker images are already available or can be built.",
+                    f"{line_ref('scripts/run_demo.py', 130, 166, 'Lines 130-166')} starts or reuses the runtime, prints the SuperLink/SuperNode commands, and submits the hierarchical Flower runs.",
+                    f"{line_ref('scripts/run_demo.py', 168, 215, 'Lines 168-215')} runs evaluation, prediction, notebook execution, metrics printing, and handbook rebuild in order.",
                 ]
             )
             + h2("Captured transcript")
@@ -1031,10 +1077,10 @@ docker compose logs --tail=80 global-superlink
             + table(
                 ["Artifact", "What it proves"],
                 [
-                    ["<code>shared/checkpoints/region_eu/round_1.pt</code>", "The EU regional Flower federation aggregated hospital updates."],
-                    ["<code>shared/checkpoints/region_na/round_1.pt</code>", "The NA regional Flower federation aggregated hospital updates."],
+                    ["<code>shared/checkpoints/region_eu/round_1.pt</code>", "The EU regional Flower federation aggregated site updates."],
+                    ["<code>shared/checkpoints/region_na/round_1.pt</code>", "The NA regional Flower federation aggregated site updates."],
                     ["<code>shared/checkpoints/global/round_1.pt</code>", "The global Flower federation aggregated gateway updates."],
-                    ["<code>reports/metrics_summary_global.csv</code>", "The global checkpoint can be evaluated across hospital test splits."],
+                    ["<code>reports/metrics_summary_global.csv</code>", "The global checkpoint can be evaluated across site test splits."],
                     ["<code>reports/predictions_hospital_eu_01.csv</code>", "The trained checkpoint can be used for row-level inference."],
                 ],
             )
@@ -1044,7 +1090,7 @@ docker compose logs --tail=80 global-superlink
             + predictions_table(15)
             + lab_card(
                 "Hands-on lab: rendered runtime evidence",
-                "This lab is the rendered notebook view of the same runtime evidence: services, "
+                "This lab is the executed notebook view of the same runtime evidence: services, "
                 "logs, checkpoint metadata, summary metrics, and raw-data boundary checks.",
                 "../renders/04_flower_runtime_orchestration.html",
             )
@@ -1357,6 +1403,20 @@ figure.command {
   border-radius: 8px;
 }
 
+.notebook-image {
+  margin: 12px 0 24px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.notebook-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
 .pager {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -1399,7 +1459,7 @@ def convert_notebooks() -> None:
                     body += render_output(output)
                 body += "</section>"
         rendered = render_shell(f"Render {notebook.stem}", body, "index", "../")
-        (RENDERS_DIR / f"{notebook.stem}.html").write_text(rendered)
+        write_clean_text(RENDERS_DIR / f"{notebook.stem}.html", rendered)
 
 
 def markdown_cell(source: str) -> str:
@@ -1451,8 +1511,8 @@ def markdown_cell(source: str) -> str:
 
 def output_text(value: object) -> str:
     if isinstance(value, list):
-        return "".join(str(item) for item in value)
-    return str(value)
+        return strip_ansi("".join(str(item) for item in value)).replace("\r", "\n")
+    return strip_ansi(str(value)).replace("\r", "\n")
 
 
 def render_output(output: nbformat.NotebookNode) -> str:
@@ -1465,6 +1525,12 @@ def render_output(output: nbformat.NotebookNode) -> str:
     data = output.get("data", {})
     if "text/html" in data:
         return f"<div class=\"notebook-output-html\">{output_text(data['text/html'])}</div>"
+    if "image/png" in data:
+        return (
+            "<div class=\"notebook-image\">"
+            f"<img alt=\"Notebook output image\" src=\"data:image/png;base64,{output_text(data['image/png'])}\" />"
+            "</div>"
+        )
     if "text/plain" in data:
         return code(output_text(data["text/plain"]), "Output", "text")
     return ""
@@ -1476,10 +1542,11 @@ def main() -> None:
     EPISODES_DIR.mkdir(parents=True, exist_ok=True)
     RENDERS_DIR.mkdir(parents=True, exist_ok=True)
     (DOCS / ".nojekyll").write_text("")
-    (DOCS / "styles.css").write_text(
-        CSS.strip() + "\n\n" + PYGMENTS_FORMATTER.get_style_defs(".highlight") + "\n"
+    write_clean_text(
+        DOCS / "styles.css",
+        CSS.strip() + "\n\n" + PYGMENTS_FORMATTER.get_style_defs(".highlight") + "\n",
     )
-    (DOCS / "index.html").write_text(make_index())
+    write_clean_text(DOCS / "index.html", make_index())
     for index, page in enumerate(EPISODES):
         write_page(page, index)
     convert_notebooks()

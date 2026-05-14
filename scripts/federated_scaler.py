@@ -72,7 +72,7 @@ def main(
     partitions_dir: Path = typer.Option(DEFAULT_PARTITIONS_DIR, "--partitions-dir"),
     output: Path = typer.Option(DEFAULT_SCALER_PATH, "--output", "-o"),
 ) -> None:
-    """Aggregate per-hospital n/sum/sumsq feature statistics into scaler metadata."""
+    """Aggregate per-site n/sum/sumsq feature statistics into scaler metadata."""
 
     stats = []
     for train_path in sorted(partitions_dir.glob("*/train.parquet")):

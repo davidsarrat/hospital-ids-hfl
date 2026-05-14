@@ -17,27 +17,28 @@ from hfl_cicids.config import HOSPITALS, REGIONS, hospitals_by_region
 app = typer.Typer(add_completion=False)
 console = Console()
 
-SERVERAPP_BUILD = """\
-      context: .
-      dockerfile_inline: |
-        FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
-        USER root
-        RUN apt-get update \\
-          && apt-get -y --no-install-recommends install build-essential \\
-          && rm -rf /var/lib/apt/lists/*
-        USER app
-        WORKDIR /app
-        COPY --chown=app:app pyproject.toml README.md ./
-        COPY --chown=app:app hfl_cicids ./hfl_cicids
-        COPY --chown=app:app scripts ./scripts
-        RUN python -m pip install -U --no-cache-dir \\
-          --index-url https://download.pytorch.org/whl/cpu \\
-          "torch>=2.3,<3.0"
-        RUN python -m pip install -U --no-cache-dir .
-        ENTRYPOINT [\"flower-superexec\"]
+SUPEREXEC_APP = """\
+x-superexec-app: &superexec-app
+  image: hospital-ids-hfl-superexec:${HFL_IMAGE_TAG:-latest}
+  build:
+    context: .
+    dockerfile_inline: |
+      FROM flwr/superexec:${FLWR_VERSION:-1.29.0}
+      USER root
+      RUN apt-get update \\
+        && apt-get -y --no-install-recommends install build-essential \\
+        && rm -rf /var/lib/apt/lists/*
+      USER app
+      WORKDIR /app
+      COPY --chown=app:app pyproject.toml README.md ./
+      COPY --chown=app:app hfl_cicids ./hfl_cicids
+      COPY --chown=app:app scripts ./scripts
+      RUN python -m pip install -U --no-cache-dir \\
+        --index-url https://download.pytorch.org/whl/cpu \\
+        "torch>=2.3,<3.0"
+      RUN python -m pip install -U --no-cache-dir .
+      ENTRYPOINT [\"flower-superexec\"]
 """
-
-CLIENTAPP_BUILD = SERVERAPP_BUILD
 
 
 def _superlink(name: str, port: int) -> str:
@@ -56,8 +57,7 @@ def _superlink(name: str, port: int) -> str:
 def _serverexec(name: str) -> str:
     return f"""\
   {name}-superexec-serverapp:
-    build:
-{SERVERAPP_BUILD.rstrip()}
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -91,8 +91,7 @@ def _hospital_supernode(hospital_id: str, region: str) -> str:
       - {region_service}-superlink
 
   {service}-superexec-clientapp:
-    build:
-{CLIENTAPP_BUILD.rstrip()}
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -128,8 +127,7 @@ def _gateway_supernode(region: str) -> str:
       - global-superlink
 
   {service}-gateway-superexec-clientapp:
-    build:
-{CLIENTAPP_BUILD.rstrip()}
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -165,8 +163,7 @@ def _flat_supernodes() -> str:
       - flat-superlink
 
   {service}-superexec-clientapp:
-    build:
-{CLIENTAPP_BUILD.rstrip()}
+    <<: *superexec-app
     command:
       - --insecure
       - --plugin-type
@@ -185,6 +182,7 @@ def _flat_supernodes() -> str:
 
 def render_compose(include_flat: bool = True) -> str:
     chunks = [
+        SUPEREXEC_APP,
         "services:\n",
         _superlink("global", 39093),
         _serverexec("global"),

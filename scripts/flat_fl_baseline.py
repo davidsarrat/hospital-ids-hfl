@@ -43,7 +43,7 @@ def main(
     ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
-    """Run a one-layer flat Flower FedAvg baseline against six hospital SuperNodes."""
+    """Run a one-layer flat Flower FedAvg baseline against six site SuperNodes."""
 
     if input_dim <= 0:
         try:

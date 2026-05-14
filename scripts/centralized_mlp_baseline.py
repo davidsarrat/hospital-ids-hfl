@@ -44,7 +44,7 @@ def main(
     batch_size: int = typer.Option(1024, "--batch-size"),
     learning_rate: float = typer.Option(0.001, "--learning-rate"),
 ) -> None:
-    """Train a centralized MLP baseline over all simulated hospital train splits."""
+    """Train a centralized MLP baseline over all simulated site train splits."""
 
     first_dir = partitions_dir / HOSPITALS[0].hospital_id
     input_dim = infer_input_dim(first_dir)

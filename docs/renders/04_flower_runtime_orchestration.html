@@ -18,7 +18,7 @@
 <a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
 <a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
 <a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
-<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and site ClientApp</a>
 <a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
@@ -27,50 +27,14 @@
     </nav>
     <main class="content">
       <section class="hero"><p class="eyebrow">Handbook</p><h1>Render: 04_flower_runtime_orchestration</h1><p>HTML render generated from 04_flower_runtime_orchestration.ipynb.</p></section><p><a href="../index.html">Back to handbook</a></p><h1>04 - Flower Runtime Orchestration</h1>
-<p>Rendered snapshot of how the deployment runtime is actuated in this demo. Captured at `2026-05-14T09:38:19` from the local Docker/Flower topology.</p>
+<p>Rendered snapshot of how the deployment runtime is actuated in this demo. Captured at `2026-05-14T16:09:13` from the local Docker/Flower topology.</p>
 <p>The goal of this notebook is not to retrain the model. It shows which SuperLinks, SuperNodes and SuperExec services are running, what each one connects to, and which `flwr run` calls drive the regional and global layers.</p><h2>1. Running Services</h2>
-<p>There are three Flower federations running at the same time: `region-eu`, `region-na`, and `global`. Hospital SuperNodes connect to regional SuperLinks. Region gateway SuperNodes connect only to the global SuperLink.</p><section class="notebook-cell"><p class="cell-label">Code cell 3</p><figure><div class="highlight"><pre><span></span>!docker compose ps --format &#39;table {{.Service}}\t{{.State}}\t{{.Ports}}&#39;
+<p>There are three Flower federations running at the same time: `region-eu`, `region-na`, and `global`. Healthcare-site SuperNodes connect to regional SuperLinks. Region gateway SuperNodes connect only to the global SuperLink.</p><section class="notebook-cell"><p class="cell-label">Code cell 3</p><figure><div class="highlight"><pre><span></span>!docker compose ps --format &#39;table {{.Service}}\t{{.State}}\t{{.Ports}}&#39;
 </pre></div>
-</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>SERVICE                                   STATE     PORTS
-flat-hospital-eu-01-superexec-clientapp   running   
-flat-hospital-eu-01-supernode             running   
-flat-hospital-eu-02-superexec-clientapp   running   
-flat-hospital-eu-02-supernode             running   
-flat-hospital-eu-03-superexec-clientapp   running   
-flat-hospital-eu-03-supernode             running   
-flat-hospital-na-01-superexec-clientapp   running   
-flat-hospital-na-01-supernode             running   
-flat-hospital-na-02-superexec-clientapp   running   
-flat-hospital-na-02-supernode             running   
-flat-hospital-na-03-superexec-clientapp   running   
-flat-hospital-na-03-supernode             running   
-flat-superexec-serverapp                  running   
-flat-superlink                            running   0.0.0.0:49093-&gt;9093/tcp, [::]:49093-&gt;9093/tcp
-global-superexec-serverapp                running   
-global-superlink                          running   0.0.0.0:39093-&gt;9093/tcp, [::]:39093-&gt;9093/tcp
-hospital-eu-01-superexec-clientapp        running   
-hospital-eu-01-supernode                  running   
-hospital-eu-02-superexec-clientapp        running   
-hospital-eu-02-supernode                  running   
-hospital-eu-03-superexec-clientapp        running   
-hospital-eu-03-supernode                  running   
-hospital-na-01-superexec-clientapp        running   
-hospital-na-01-supernode                  running   
-hospital-na-02-superexec-clientapp        running   
-hospital-na-02-supernode                  running   
-hospital-na-03-superexec-clientapp        running   
-hospital-na-03-supernode                  running   
-region-eu-gateway-superexec-clientapp     running   
-region-eu-gateway-supernode               running   
-region-eu-superexec-serverapp             running   
-region-eu-superlink                       running   0.0.0.0:19093-&gt;9093/tcp, [::]:19093-&gt;9093/tcp
-region-na-gateway-superexec-clientapp     running   
-region-na-gateway-supernode               running   
-region-na-superexec-serverapp             running   
-region-na-superlink                       running   0.0.0.0:29093-&gt;9093/tcp, [::]:29093-&gt;9093/tcp
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>{.Service}   {.State}   {.Ports}
 </pre></div>
 </figure></section><h2>2. Compose Roles</h2>
-<p>`SuperLink` services expose the Flower APIs. `SuperExec ServerApp` services execute the server application submitted through `flwr run`. Hospital `SuperNode` services receive tasks from their regional SuperLink, while gateway SuperNodes receive tasks from the global SuperLink. ClientApp SuperExec services execute `hfl_cicids.client_app` next to each SuperNode.</p><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
+<p>`SuperLink` services expose the Flower APIs. `SuperExec ServerApp` services execute the server application submitted through `flwr run`. Healthcare-site `SuperNode` services receive tasks from their regional SuperLink, while gateway SuperNodes receive tasks from the global SuperLink. ClientApp SuperExec services execute `hfl_cicids.client_app` next to each SuperNode.</p><section class="notebook-cell"><p class="cell-label">Code cell 5</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
 import pandas as pd
 import yaml
 
@@ -104,102 +68,289 @@ for name, service in sorted(compose[&#39;services&#39;].items()):
     })
 pd.DataFrame(rows)
 </pre></div>
-</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>                              service                role         superlink_target                     appio_target                                                                      node_config                                                     volumes
-           global-superexec-serverapp SuperExec ServerApp                                     global-superlink:9091                                                                                                                             ./shared:/shared
-                     global-superlink           SuperLink                                                                                                                                                                                                       
-   hospital-eu-01-superexec-clientapp SuperExec ClientApp                             hospital-eu-01-supernode:9094                                                                                  ./data/partitions/hospital_eu_01:/data:ro, ./shared:/shared
-             hospital-eu-01-supernode           SuperNode region-eu-superlink:9092                                  role=&quot;hospital&quot; region=&quot;region_eu&quot; hospital-id=&quot;hospital_eu_01&quot; data-dir=&quot;/data&quot;                                                            
-   hospital-eu-02-superexec-clientapp SuperExec ClientApp                             hospital-eu-02-supernode:9094                                                                                  ./data/partitions/hospital_eu_02:/data:ro, ./shared:/shared
-             hospital-eu-02-supernode           SuperNode region-eu-superlink:9092                                  role=&quot;hospital&quot; region=&quot;region_eu&quot; hospital-id=&quot;hospital_eu_02&quot; data-dir=&quot;/data&quot;                                                            
-   hospital-eu-03-superexec-clientapp SuperExec ClientApp                             hospital-eu-03-supernode:9094                                                                                  ./data/partitions/hospital_eu_03:/data:ro, ./shared:/shared
-             hospital-eu-03-supernode           SuperNode region-eu-superlink:9092                                  role=&quot;hospital&quot; region=&quot;region_eu&quot; hospital-id=&quot;hospital_eu_03&quot; data-dir=&quot;/data&quot;                                                            
-   hospital-na-01-superexec-clientapp SuperExec ClientApp                             hospital-na-01-supernode:9094                                                                                  ./data/partitions/hospital_na_01:/data:ro, ./shared:/shared
-             hospital-na-01-supernode           SuperNode region-na-superlink:9092                                  role=&quot;hospital&quot; region=&quot;region_na&quot; hospital-id=&quot;hospital_na_01&quot; data-dir=&quot;/data&quot;                                                            
-   hospital-na-02-superexec-clientapp SuperExec ClientApp                             hospital-na-02-supernode:9094                                                                                  ./data/partitions/hospital_na_02:/data:ro, ./shared:/shared
-             hospital-na-02-supernode           SuperNode region-na-superlink:9092                                  role=&quot;hospital&quot; region=&quot;region_na&quot; hospital-id=&quot;hospital_na_02&quot; data-dir=&quot;/data&quot;                                                            
-   hospital-na-03-superexec-clientapp SuperExec ClientApp                             hospital-na-03-supernode:9094                                                                                  ./data/partitions/hospital_na_03:/data:ro, ./shared:/shared
-             hospital-na-03-supernode           SuperNode region-na-superlink:9092                                  role=&quot;hospital&quot; region=&quot;region_na&quot; hospital-id=&quot;hospital_na_03&quot; data-dir=&quot;/data&quot;                                                            
-region-eu-gateway-superexec-clientapp SuperExec ClientApp                          region-eu-gateway-supernode:9094                                                                                                                             ./shared:/shared
-          region-eu-gateway-supernode           SuperNode    global-superlink:9092                                    role=&quot;region-gateway&quot; region=&quot;region_eu&quot; checkpoint-root=&quot;/shared/checkpoints&quot;                                            ./shared:/shared
-        region-eu-superexec-serverapp SuperExec ServerApp                                  region-eu-superlink:9091                                                                                                                             ./shared:/shared
-                  region-eu-superlink           SuperLink                                                                                                                                                                                                       
-region-na-gateway-superexec-clientapp SuperExec ClientApp                          region-na-gateway-supernode:9094                                                                                                                             ./shared:/shared
-          region-na-gateway-supernode           SuperNode    global-superlink:9092                                    role=&quot;region-gateway&quot; region=&quot;region_na&quot; checkpoint-root=&quot;/shared/checkpoints&quot;                                            ./shared:/shared
-        region-na-superexec-serverapp SuperExec ServerApp                                  region-na-superlink:9091                                                                                                                             ./shared:/shared
-                  region-na-superlink           SuperLink
-</pre></div>
-</figure></section><h2>3. Flower Profiles</h2>
+</figure><div class="notebook-output-html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>service</th>
+      <th>role</th>
+      <th>superlink_target</th>
+      <th>appio_target</th>
+      <th>node_config</th>
+      <th>volumes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>global-superexec-serverapp</td>
+      <td>SuperExec ServerApp</td>
+      <td></td>
+      <td>global-superlink:9091</td>
+      <td></td>
+      <td>./shared:/shared</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>global-superlink</td>
+      <td>SuperLink</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>hospital-eu-01-superexec-clientapp</td>
+      <td>SuperExec ClientApp</td>
+      <td></td>
+      <td>hospital-eu-01-supernode:9094</td>
+      <td></td>
+      <td>./data/partitions/hospital_eu_01:/data:ro, ./s...</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>hospital-eu-01-supernode</td>
+      <td>SuperNode</td>
+      <td>region-eu-superlink:9092</td>
+      <td></td>
+      <td>role="hospital" region="region_eu" hospital-id...</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>hospital-eu-02-superexec-clientapp</td>
+      <td>SuperExec ClientApp</td>
+      <td></td>
+      <td>hospital-eu-02-supernode:9094</td>
+      <td></td>
+      <td>./data/partitions/hospital_eu_02:/data:ro, ./s...</td>
+    </tr>
+    <tr>
+      <th>5</th>
+      <td>hospital-eu-02-supernode</td>
+      <td>SuperNode</td>
+      <td>region-eu-superlink:9092</td>
+      <td></td>
+      <td>role="hospital" region="region_eu" hospital-id...</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>6</th>
+      <td>hospital-eu-03-superexec-clientapp</td>
+      <td>SuperExec ClientApp</td>
+      <td></td>
+      <td>hospital-eu-03-supernode:9094</td>
+      <td></td>
+      <td>./data/partitions/hospital_eu_03:/data:ro, ./s...</td>
+    </tr>
+    <tr>
+      <th>7</th>
+      <td>hospital-eu-03-supernode</td>
+      <td>SuperNode</td>
+      <td>region-eu-superlink:9092</td>
+      <td></td>
+      <td>role="hospital" region="region_eu" hospital-id...</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>8</th>
+      <td>hospital-na-01-superexec-clientapp</td>
+      <td>SuperExec ClientApp</td>
+      <td></td>
+      <td>hospital-na-01-supernode:9094</td>
+      <td></td>
+      <td>./data/partitions/hospital_na_01:/data:ro, ./s...</td>
+    </tr>
+    <tr>
+      <th>9</th>
+      <td>hospital-na-01-supernode</td>
+      <td>SuperNode</td>
+      <td>region-na-superlink:9092</td>
+      <td></td>
+      <td>role="hospital" region="region_na" hospital-id...</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>10</th>
+      <td>hospital-na-02-superexec-clientapp</td>
+      <td>SuperExec ClientApp</td>
+      <td></td>
+      <td>hospital-na-02-supernode:9094</td>
+      <td></td>
+      <td>./data/partitions/hospital_na_02:/data:ro, ./s...</td>
+    </tr>
+    <tr>
+      <th>11</th>
+      <td>hospital-na-02-supernode</td>
+      <td>SuperNode</td>
+      <td>region-na-superlink:9092</td>
+      <td></td>
+      <td>role="hospital" region="region_na" hospital-id...</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>12</th>
+      <td>hospital-na-03-superexec-clientapp</td>
+      <td>SuperExec ClientApp</td>
+      <td></td>
+      <td>hospital-na-03-supernode:9094</td>
+      <td></td>
+      <td>./data/partitions/hospital_na_03:/data:ro, ./s...</td>
+    </tr>
+    <tr>
+      <th>13</th>
+      <td>hospital-na-03-supernode</td>
+      <td>SuperNode</td>
+      <td>region-na-superlink:9092</td>
+      <td></td>
+      <td>role="hospital" region="region_na" hospital-id...</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>14</th>
+      <td>region-eu-gateway-superexec-clientapp</td>
+      <td>SuperExec ClientApp</td>
+      <td></td>
+      <td>region-eu-gateway-supernode:9094</td>
+      <td></td>
+      <td>./shared:/shared</td>
+    </tr>
+    <tr>
+      <th>15</th>
+      <td>region-eu-gateway-supernode</td>
+      <td>SuperNode</td>
+      <td>global-superlink:9092</td>
+      <td></td>
+      <td>role="region-gateway" region="region_eu" check...</td>
+      <td>./shared:/shared</td>
+    </tr>
+    <tr>
+      <th>16</th>
+      <td>region-eu-superexec-serverapp</td>
+      <td>SuperExec ServerApp</td>
+      <td></td>
+      <td>region-eu-superlink:9091</td>
+      <td></td>
+      <td>./shared:/shared</td>
+    </tr>
+    <tr>
+      <th>17</th>
+      <td>region-eu-superlink</td>
+      <td>SuperLink</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>18</th>
+      <td>region-na-gateway-superexec-clientapp</td>
+      <td>SuperExec ClientApp</td>
+      <td></td>
+      <td>region-na-gateway-supernode:9094</td>
+      <td></td>
+      <td>./shared:/shared</td>
+    </tr>
+    <tr>
+      <th>19</th>
+      <td>region-na-gateway-supernode</td>
+      <td>SuperNode</td>
+      <td>global-superlink:9092</td>
+      <td></td>
+      <td>role="region-gateway" region="region_na" check...</td>
+      <td>./shared:/shared</td>
+    </tr>
+    <tr>
+      <th>20</th>
+      <td>region-na-superexec-serverapp</td>
+      <td>SuperExec ServerApp</td>
+      <td></td>
+      <td>region-na-superlink:9091</td>
+      <td></td>
+      <td>./shared:/shared</td>
+    </tr>
+    <tr>
+      <th>21</th>
+      <td>region-na-superlink</td>
+      <td>SuperLink</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+</div></div></section><h2>3. Flower Profiles</h2>
 <p>The profile names are what the orchestrator passes to `flwr run . &lt;profile&gt;`. Each profile points to one SuperLink control endpoint.</p><section class="notebook-cell"><p class="cell-label">Code cell 7</p><figure><div class="highlight"><pre><span></span>!flwr config list
 </pre></div>
-</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>Flower Config file: ~/.flwr/config.toml
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>Flower Config file: /Users/david/.flwr/config.toml
+
 SuperLink connections:
+
   region-eu (default)
+
   region-na
+
   global
+
   flat
 </pre></div>
 </figure></section><h2>4. Actuating the Federations</h2>
 <p>`scripts/run_hierarchical_rounds.py` is the control plane for the demo. For each global round it submits one regional Flower run per region, then one global Flower run where the clients are the gateway SuperNodes.</p><section class="notebook-cell"><p class="cell-label">Code cell 9</p><figure><div class="highlight"><pre><span></span>!python scripts/run_hierarchical_rounds.py --global-rounds 1 --regional-rounds 1 --batch-size 8192 --dry-run
 </pre></div>
-</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>──────────────────────────────── Global round 1 ────────────────────────────────
-Running: flwr run . region-eu --stream --run-config &#39;level=&quot;regional&quot; 
-region=&quot;region_eu&quot; global-round=1 
-init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; 
-output-checkpoint=&quot;/shared/checkpoints/region_eu/round_1.pt&quot; num-server-rounds=1
-local-epochs=1 batch-size=8192 learning-rate=0.001 input-dim=78 
-region-num-examples=871173 fraction-train=1.0 fraction-evaluate=1.0 
-min-train-nodes=3 min-evaluate-nodes=3 min-available-nodes=3&#39;
-Running: flwr run . region-na --stream --run-config &#39;level=&quot;regional&quot; 
-region=&quot;region_na&quot; global-round=1 
-init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; 
-output-checkpoint=&quot;/shared/checkpoints/region_na/round_1.pt&quot; num-server-rounds=1
-local-epochs=1 batch-size=8192 learning-rate=0.001 input-dim=78 
-region-num-examples=1110344 fraction-train=1.0 fraction-evaluate=1.0 
-min-train-nodes=3 min-evaluate-nodes=3 min-available-nodes=3&#39;
-Running: flwr run . global --stream --run-config &#39;level=&quot;global&quot; global-round=1 
-init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; 
-output-checkpoint=&quot;/shared/checkpoints/global/round_1.pt&quot; num-server-rounds=1 
-local-epochs=1 batch-size=8192 learning-rate=0.0 input-dim=78 
-global-num-examples=1981517 fraction-train=1.0 fraction-evaluate=0.0 
-min-train-nodes=2 min-evaluate-nodes=0 min-available-nodes=2&#39;
+</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>------------------------------------------------------------------------------------------------------ Global round 1 ------------------------------------------------------------------------------------------------------
+
+Starting from global checkpoint: shared/checkpoints/global/round_0.pt
+
+
+
+Regional phase: region_eu | site_nodes=3 | train_examples=871,173 | regional_rounds=1
+
+
+
+Submitting Flower run to region-eu
+
+$ flwr run . region-eu --stream --run-config &#39;level=&quot;regional&quot; region=&quot;region_eu&quot; global-round=1 init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; output-checkpoint=&quot;/shared/checkpoints/region_eu/round_1.pt&quot; num-server-rounds=1 local-epochs=1 batch-size=8192 learning-rate=0.001 input-dim=78 region-num-examples=871173 fraction-train=1.0 fraction-evaluate=1.0 min-train-nodes=3 min-evaluate-nodes=3 min-available-nodes=3&#39;
+
+
+
+Regional phase: region_na | site_nodes=3 | train_examples=1,110,344 | regional_rounds=1
+
+
+
+Submitting Flower run to region-na
+
+$ flwr run . region-na --stream --run-config &#39;level=&quot;regional&quot; region=&quot;region_na&quot; global-round=1 init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; output-checkpoint=&quot;/shared/checkpoints/region_na/round_1.pt&quot; num-server-rounds=1 local-epochs=1 batch-size=8192 learning-rate=0.001 input-dim=78 region-num-examples=1110344 fraction-train=1.0 fraction-evaluate=1.0 min-train-nodes=3 min-evaluate-nodes=3 min-available-nodes=3&#39;
+
+
+
+Global phase: gateway_nodes=2 | train_examples=1,981,517
+
+
+
+Submitting Flower run to global
+
+$ flwr run . global --stream --run-config &#39;level=&quot;global&quot; global-round=1 init-checkpoint=&quot;/shared/checkpoints/global/round_0.pt&quot; output-checkpoint=&quot;/shared/checkpoints/global/round_1.pt&quot; num-server-rounds=1 local-epochs=1 batch-size=8192 learning-rate=0.0 input-dim=78 global-num-examples=1981517 fraction-train=1.0 fraction-evaluate=0.0 min-train-nodes=2 min-evaluate-nodes=0 min-available-nodes=2&#39;
+
 Latest global checkpoint: shared/checkpoints/global/round_1.pt
 </pre></div>
 </figure></section><h2>5. Runtime Logs</h2>
-<p>The hospital SuperNode receives train/evaluate messages from its regional SuperLink. The gateway SuperNode receives a train message from the global SuperLink and returns the regional checkpoint as a model update.</p><section class="notebook-cell"><p class="cell-label">Code cell 11</p><figure><div class="highlight"><pre><span></span>!docker compose logs --tail=12 hospital-eu-01-supernode region-eu-gateway-supernode region-eu-superlink global-superlink
-</pre></div>
-</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>$ docker compose logs --tail=8 hospital-eu-01-supernode
-hospital-eu-01-supernode-1  | INFO :      
-hospital-eu-01-supernode-1  | INFO :      [RUN 8892720515652009613]
-hospital-eu-01-supernode-1  | INFO :      Receiving: evaluate message (ID: 226ada72ab4b62b4ba636a36a933269aa6e86eb78e93ebf4b6f6c11cea03790a)
-hospital-eu-01-supernode-1  | INFO :      Received successfully
-hospital-eu-01-supernode-1  | INFO :      
-hospital-eu-01-supernode-1  | INFO :      [RUN 8892720515652009613]
-hospital-eu-01-supernode-1  | INFO :      Sending: evaluate message (ID: c3bec7d8c8546c667c761a160828848adab0b974d2afc129faa9a54602a7eff5)
-hospital-eu-01-supernode-1  | INFO :      Sent successfully
-
-$ docker compose logs --tail=8 region-eu-gateway-supernode
-region-eu-gateway-supernode-1  | INFO :      
-region-eu-gateway-supernode-1  | INFO :      [RUN 7108604665246021897]
-region-eu-gateway-supernode-1  | INFO :      Receiving: train message (ID: bcd8d96c4f1c22169205a0a50388bd6c01e202efbb4d1e61abe29d6cce9887b8)
-region-eu-gateway-supernode-1  | INFO :      Received successfully
-region-eu-gateway-supernode-1  | INFO :      
-region-eu-gateway-supernode-1  | INFO :      [RUN 7108604665246021897]
-region-eu-gateway-supernode-1  | INFO :      Sending: train message (ID: a607a37466e7166114a28d7067a7668d7ee9630172360407dc6c7db86c6f810d)
-region-eu-gateway-supernode-1  | INFO :      Sent successfully
-
-$ docker compose logs --tail=8 region-eu-superlink
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=14122891693576725559
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=5493997597484581528
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=8185100249412705622
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=14122891693576725559
-region-eu-superlink-1  | INFO :      [Fleet.PullMessages] node_id=5493997597484581528
-
-$ docker compose logs --tail=8 global-superlink
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=16240123602962172218
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=16240123602962172218
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=17412030246258271872
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=16240123602962172218
-global-superlink-1  | INFO :      [Fleet.PullMessages] node_id=17412030246258271872
+<p>The healthcare-site SuperNode receives train/evaluate messages from its regional SuperLink. The gateway SuperNode receives a train message from the global SuperLink and returns the regional checkpoint as a model update.</p><section class="notebook-cell"><p class="cell-label">Code cell 11</p><figure><div class="highlight"><pre><span></span>!docker compose logs --tail=12 hospital-eu-01-supernode region-eu-gateway-supernode region-eu-superlink global-superlink
 </pre></div>
 </figure></section><h2>6. Checkpoint Metadata</h2>
 <p>Regional checkpoints carry the regional training-example count used by global weighted FedAvg. The global checkpoint is produced by the global Flower federation.</p><section class="notebook-cell"><p class="cell-label">Code cell 13</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
@@ -227,23 +378,23 @@ shared/checkpoints/global/round_1.metadata.json
 shared/checkpoints/region_eu/round_1.metadata.json
 {
   &quot;final_evaluate_metrics&quot;: {
-    &quot;eval_acc&quot;: 0.9088386543818298,
-    &quot;eval_auprc&quot;: 0.7388053754330514,
-    &quot;eval_balanced_acc&quot;: 0.9434234895798821,
-    &quot;eval_f1&quot;: 0.2398274571981538,
-    &quot;eval_false_negative_rate&quot;: 0.018916868113710777,
-    &quot;eval_false_positive_rate&quot;: 0.09423615272652494,
-    &quot;eval_precision&quot;: 0.15154821865302495,
-    &quot;eval_recall&quot;: 0.9810831318862892,
-    &quot;eval_roc_auc&quot;: 0.98831318865042
+    &quot;eval_acc&quot;: 0.912716948789372,
+    &quot;eval_auprc&quot;: 0.7482221932009319,
+    &quot;eval_balanced_acc&quot;: 0.9465330678331263,
+    &quot;eval_f1&quot;: 0.24754852964520757,
+    &quot;eval_false_negative_rate&quot;: 0.01696630299632639,
+    &quot;eval_false_positive_rate&quot;: 0.08996756133742079,
+    &quot;eval_precision&quot;: 0.15649223825354358,
+    &quot;eval_recall&quot;: 0.9830336970036735,
+    &quot;eval_roc_auc&quot;: 0.9891377786878964
   },
   &quot;final_train_metrics&quot;: {
-    &quot;train_loss&quot;: 0.44111061219332715,
-    &quot;val_auprc&quot;: 0.7370027252624184,
-    &quot;val_f1&quot;: 0.2748170929692166,
-    &quot;val_false_negative_rate&quot;: 0.019998102956170653,
-    &quot;val_false_positive_rate&quot;: 0.11000702398757067,
-    &quot;val_roc_auc&quot;: 0.9814099324867481
+    &quot;train_loss&quot;: 0.45856640012897376,
+    &quot;val_auprc&quot;: 0.7455749061804295,
+    &quot;val_f1&quot;: 0.2770287525601163,
+    &quot;val_false_negative_rate&quot;: 0.019014734572795518,
+    &quot;val_false_positive_rate&quot;: 0.10935645092332277,
+    &quot;val_roc_auc&quot;: 0.9806277847844885
   },
   &quot;global_round&quot;: 1,
   &quot;input_dim&quot;: 78,
@@ -251,33 +402,33 @@ shared/checkpoints/region_eu/round_1.metadata.json
   &quot;num_examples&quot;: 871173,
   &quot;region&quot;: &quot;region_eu&quot;,
   &quot;regional_rounds&quot;: 1,
-  &quot;val_auprc&quot;: 0.7388053754330514,
-  &quot;val_f1&quot;: 0.2398274571981538,
-  &quot;val_false_negative_rate&quot;: 0.018916868113710777,
-  &quot;val_false_positive_rate&quot;: 0.09423615272652494,
-  &quot;val_roc_auc&quot;: 0.98831318865042,
+  &quot;val_auprc&quot;: 0.7482221932009319,
+  &quot;val_f1&quot;: 0.24754852964520757,
+  &quot;val_false_negative_rate&quot;: 0.01696630299632639,
+  &quot;val_false_positive_rate&quot;: 0.08996756133742079,
+  &quot;val_roc_auc&quot;: 0.9891377786878964,
   &quot;weighted_by_key&quot;: &quot;num-examples&quot;
 }
 shared/checkpoints/region_na/round_1.metadata.json
 {
   &quot;final_evaluate_metrics&quot;: {
-    &quot;eval_acc&quot;: 0.912554847603517,
-    &quot;eval_auprc&quot;: 0.9627416393959645,
-    &quot;eval_balanced_acc&quot;: 0.8769497429934328,
-    &quot;eval_f1&quot;: 0.8434030007296378,
-    &quot;eval_false_negative_rate&quot;: 0.22109670784997787,
-    &quot;eval_false_positive_rate&quot;: 0.025003806163156873,
-    &quot;eval_precision&quot;: 0.9329607803971751,
-    &quot;eval_recall&quot;: 0.7789032921500222,
-    &quot;eval_roc_auc&quot;: 0.9837195759525058
+    &quot;eval_acc&quot;: 0.8807978750231158,
+    &quot;eval_auprc&quot;: 0.947016608243664,
+    &quot;eval_balanced_acc&quot;: 0.8261440950099879,
+    &quot;eval_f1&quot;: 0.7551163705529795,
+    &quot;eval_false_negative_rate&quot;: 0.325283284475652,
+    &quot;eval_false_positive_rate&quot;: 0.02242852550437235,
+    &quot;eval_precision&quot;: 0.9113811549970191,
+    &quot;eval_recall&quot;: 0.6747167155243481,
+    &quot;eval_roc_auc&quot;: 0.9783950965494901
   },
   &quot;final_train_metrics&quot;: {
-    &quot;train_loss&quot;: 0.3082205645108318,
-    &quot;val_auprc&quot;: 0.9858760214269302,
-    &quot;val_f1&quot;: 0.9521418633602312,
-    &quot;val_false_negative_rate&quot;: 0.0342369910038108,
-    &quot;val_false_positive_rate&quot;: 0.028597530393889112,
-    &quot;val_roc_auc&quot;: 0.9924786511964521
+    &quot;train_loss&quot;: 0.32835336178403096,
+    &quot;val_auprc&quot;: 0.98518717220313,
+    &quot;val_f1&quot;: 0.9462198970300437,
+    &quot;val_false_negative_rate&quot;: 0.032769535605881805,
+    &quot;val_false_positive_rate&quot;: 0.035005431017239096,
+    &quot;val_roc_auc&quot;: 0.9921053033889047
   },
   &quot;global_round&quot;: 1,
   &quot;input_dim&quot;: 78,
@@ -285,23 +436,66 @@ shared/checkpoints/region_na/round_1.metadata.json
   &quot;num_examples&quot;: 1110344,
   &quot;region&quot;: &quot;region_na&quot;,
   &quot;regional_rounds&quot;: 1,
-  &quot;val_auprc&quot;: 0.9627416393959645,
-  &quot;val_f1&quot;: 0.8434030007296378,
-  &quot;val_false_negative_rate&quot;: 0.22109670784997787,
-  &quot;val_false_positive_rate&quot;: 0.025003806163156873,
-  &quot;val_roc_auc&quot;: 0.9837195759525058,
+  &quot;val_auprc&quot;: 0.947016608243664,
+  &quot;val_f1&quot;: 0.7551163705529795,
+  &quot;val_false_negative_rate&quot;: 0.325283284475652,
+  &quot;val_false_positive_rate&quot;: 0.02242852550437235,
+  &quot;val_roc_auc&quot;: 0.9783950965494901,
   &quot;weighted_by_key&quot;: &quot;num-examples&quot;
 }
 </pre></div>
 </figure></section><h2>7. Evaluation Snapshot</h2>
-<p>These metrics are from the latest rendered local run. They are evidence that the global checkpoint can be loaded and evaluated across the hospital test splits.</p><section class="notebook-cell"><p class="cell-label">Code cell 15</p><figure><div class="highlight"><pre><span></span>import pandas as pd
+<p>These metrics are from the latest rendered local run. They are evidence that the global checkpoint can be loaded and evaluated across the site test splits.</p><section class="notebook-cell"><p class="cell-label">Code cell 15</p><figure><div class="highlight"><pre><span></span>import pandas as pd
 pd.read_csv(&#39;reports/metrics_summary_global.csv&#39;)
 </pre></div>
-</figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>            run          model_kind          scope  weighted_f1  macro_f1  weighted_roc_auc  weighted_auprc  mean_false_positive_rate  worst_false_negative_rate  num_examples
-hierarchical_fl hierarchical_global global_summary     0.668511  0.812493           0.98411        0.838231                  0.044571                   0.228034        424614
-</pre></div>
-</figure></section><h2>8. Privacy Boundary Check</h2>
-<p>`shared/` is allowed to contain checkpoints, metrics and preprocessing metadata. It should not contain hospital CSV/parquet rows.</p><section class="notebook-cell"><p class="cell-label">Code cell 17</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
+</figure><div class="notebook-output-html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>run</th>
+      <th>model_kind</th>
+      <th>scope</th>
+      <th>weighted_f1</th>
+      <th>macro_f1</th>
+      <th>weighted_roc_auc</th>
+      <th>weighted_auprc</th>
+      <th>mean_false_positive_rate</th>
+      <th>worst_false_negative_rate</th>
+      <th>num_examples</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>hierarchical_fl</td>
+      <td>hierarchical_global</td>
+      <td>global_summary</td>
+      <td>0.65235</td>
+      <td>0.797289</td>
+      <td>0.982793</td>
+      <td>0.8152</td>
+      <td>0.047693</td>
+      <td>0.242705</td>
+      <td>424614</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></section><h2>8. Privacy Boundary Check</h2>
+<p>`shared/` is allowed to contain checkpoints, metrics and preprocessing metadata. It should not contain site CSV/parquet network-flow rows.</p><section class="notebook-cell"><p class="cell-label">Code cell 17</p><figure><div class="highlight"><pre><span></span>from pathlib import Path
 sorted(list(Path(&#39;shared&#39;).rglob(&#39;*.csv&#39;)) + list(Path(&#39;shared&#39;).rglob(&#39;*.parquet&#39;)))
 </pre></div>
 </figure><figure><figcaption>Output</figcaption><div class="highlight"><pre><span></span>[]

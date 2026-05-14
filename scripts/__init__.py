@@ -1,1 +1,1 @@
-"""Command-line scripts for the hospital IDS HFL demo."""
+"""Command-line scripts for the healthcare-network IDS HFL demo."""

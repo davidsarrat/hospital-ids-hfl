@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>04 - Model and hospital ClientApp - hospital-ids-hfl</title>
+  <title>04 - Model and site ClientApp - hospital-ids-hfl</title>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -18,7 +18,7 @@
 <a class="" href="../episodes/01-setup.html">01 - Setup from scratch</a>
 <a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
 <a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
-<a class="active" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="active" href="../episodes/04-model-clientapp.html">04 - Model and site ClientApp</a>
 <a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
@@ -26,7 +26,7 @@
 <a class="" href="../episodes/09-end-to-end-demo.html">09 - End-to-end demo outputs</a>
     </nav>
     <main class="content">
-      <section class="hero"><p class="eyebrow">Handbook</p><h1>04 - Model and hospital ClientApp</h1><p>How local parquet is loaded, the MLP is trained, and an update is returned to Flower.</p></section><h2>Dataset and MLP</h2><p>The main model is intentionally simple so FedAvg remains transparent: a tabular MLP with one logit output and BCEWithLogitsLoss.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L12-L63">hfl_cicids/task.py:12-63</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">12</span>
+      <section class="hero"><p class="eyebrow">Handbook</p><h1>04 - Model and site ClientApp</h1><p>How local network-flow parquet is loaded, the MLP is trained, and an update is returned to Flower.</p></section><h2>Dataset and MLP</h2><p>The main model is intentionally simple so FedAvg remains transparent: a tabular MLP with one logit output and BCEWithLogitsLoss.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L12-L63">hfl_cicids/task.py:12-63</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">12</span>
 <span class="normal">13</span>
 <span class="normal">14</span>
 <span class="normal">15</span>
@@ -218,7 +218,7 @@
 
     <span class="k">return</span> <span class="n">total_loss</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">total_batches</span><span class="p">)</span>
 </pre></div></td></tr></table></div>
-</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L88-L97">Lines 88-97</a> compute <code>pos_weight</code> to reduce the impact of class imbalance during binary classification.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L110-L112">Lines 110-112</a> create the weighted BCE loss and AdamW optimizer used by every hospital.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L117-L129">Lines 117-129</a> run the local epochs. No server or other hospital data is accessed here.</li><li>This function knows nothing about Flower. That makes the ML task testable on its own and keeps Flower-specific logic in the ClientApp.</li></ul></div><h2>Hospital ClientApp</h2><p>When the node role is hospital, Flower sends initial arrays. The ClientApp loads those weights, trains on <code>/data/train.parquet</code>, evaluates on validation, and returns arrays plus metrics. The <code>num-examples</code> key enables weighted FedAvg.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L32-L84">hfl_cicids/client_app.py:32-84</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">32</span>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L88-L97">Lines 88-97</a> compute <code>pos_weight</code> to reduce the impact of class imbalance during binary classification.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L110-L112">Lines 110-112</a> create the weighted BCE loss and AdamW optimizer used by every site.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/task.py#L117-L129">Lines 117-129</a> run the local epochs. No server or other site's network-flow rows are accessed here.</li><li>This function knows nothing about Flower. That makes the ML task testable on its own and keeps Flower-specific logic in the ClientApp.</li></ul></div><h2>Site ClientApp</h2><p>When the node role is hospital, the service is acting as a healthcare-network site. Flower sends initial arrays. The ClientApp loads those weights, trains on <code>/data/train.parquet</code>, evaluates on validation, and returns arrays plus metrics. The <code>num-examples</code> key enables weighted FedAvg.</p><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L32-L84">hfl_cicids/client_app.py:32-84</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">32</span>
 <span class="normal">33</span>
 <span class="normal">34</span>
 <span class="normal">35</span>
@@ -272,7 +272,7 @@
 <span class="normal">83</span>
 <span class="normal">84</span></pre></div></td><td class="code"><div><pre><span></span><span class="nd">@app</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">train</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Message</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Train a hospital model or return a regional checkpoint as gateway update.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Train a healthcare-site model or return a regional checkpoint as gateway update.&quot;&quot;&quot;</span>
 
     <span class="n">role</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">node_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;role&quot;</span><span class="p">,</span> <span class="s2">&quot;hospital&quot;</span><span class="p">))</span>
 
@@ -324,7 +324,7 @@
         <span class="n">reply_to</span><span class="o">=</span><span class="n">msg</span><span class="p">,</span>
     <span class="p">)</span>
 </pre></div></td></tr></table></div>
-</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L32-L41">Lines 32-41</a> route by node role. Hospitals train; gateways return regional checkpoints.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L44-L55">Lines 44-55</a> load only the mounted hospital data directory and the arrays sent by Flower.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L56-L64">Lines 56-64</a> execute local training and validation.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L66-L80">Lines 66-80</a> return two records: <code>arrays</code> for model parameters and <code>metrics</code> for aggregation metadata.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L68">Line 68</a> is critical: Flower's FedAvg uses <code>num-examples</code> as the weight for this hospital update.</li></ul></div><div class="pager"><a href="03-flower-runtime.html">Previous: 03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a><span></span><a href="05-serverapp-fedavg.html">Next: 05 - Regional ServerApp and FedAvg</a></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L32-L41">Lines 32-41</a> route by node role. Sites train; gateways return regional checkpoints.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L44-L55">Lines 44-55</a> load only the mounted site data directory and the arrays sent by Flower.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L56-L64">Lines 56-64</a> execute local training and validation.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L66-L80">Lines 66-80</a> return two records: <code>arrays</code> for model parameters and <code>metrics</code> for aggregation metadata.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/hfl_cicids/client_app.py#L68">Line 68</a> is critical: Flower's FedAvg uses <code>num-examples</code> as the weight for this site update.</li></ul></div><div class="pager"><a href="03-flower-runtime.html">Previous: 03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a><span></span><a href="05-serverapp-fedavg.html">Next: 05 - Regional ServerApp and FedAvg</a></div>
     </main>
   </div>
 </body>

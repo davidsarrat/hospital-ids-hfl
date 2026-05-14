@@ -37,7 +37,7 @@ def main(
     batch_size: int = typer.Option(1024, "--batch-size"),
     learning_rate: float = typer.Option(0.001, "--learning-rate"),
 ) -> None:
-    """Train one independent local-only model per hospital."""
+    """Train one independent local-only model per healthcare-network site."""
 
     rows = []
     output_dir.mkdir(parents=True, exist_ok=True)

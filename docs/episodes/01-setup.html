@@ -18,7 +18,7 @@
 <a class="active" href="../episodes/01-setup.html">01 - Setup from scratch</a>
 <a class="" href="../episodes/02-data-pipeline.html">02 - Reproducible data pipeline</a>
 <a class="" href="../episodes/03-flower-runtime.html">03 - Flower Runtime: SuperLink, SuperNode, and SuperExec</a>
-<a class="" href="../episodes/04-model-clientapp.html">04 - Model and hospital ClientApp</a>
+<a class="" href="../episodes/04-model-clientapp.html">04 - Model and site ClientApp</a>
 <a class="" href="../episodes/05-serverapp-fedavg.html">05 - Regional ServerApp and FedAvg</a>
 <a class="" href="../episodes/06-gateway-global.html">06 - Regional gateway and global aggregation</a>
 <a class="" href="../episodes/07-orchestration.html">07 - Orchestration, Docker, and logs</a>
@@ -29,13 +29,13 @@
       <section class="hero"><p class="eyebrow">Handbook</p><h1>01 - Setup from scratch</h1><p>How to prepare Python, dependencies, Kaggle credentials, and the main targets.</p></section><h2>Prerequisites</h2><ul><li>Python 3.11 or another version compatible with Flower 1.29.</li><li>Docker Desktop or Docker Engine with Compose.</li><li>Kaggle CLI credentials stored outside the repository.</li><li>GitHub CLI only if you want to publish or configure Pages from the terminal.</li></ul><h2>Installation</h2><figure class="command"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
 <span class="nb">source</span><span class="w"> </span>.venv/bin/activate
 python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-U<span class="w"> </span>pip
-python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[docs]&quot;</span>
 </pre></div>
 </figure><aside class="callout"><strong>Credentials</strong><p>Do not put real tokens in Git. Use environment variables or ~/.kaggle/kaggle.json. The repository ignores data, checkpoints, and common credential files.</p></aside><figure class="command"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">KAGGLE_API_TOKEN</span><span class="o">=</span><span class="s2">&quot;&lt;kaggle_token&gt;&quot;</span>
 make<span class="w"> </span>data
 make<span class="w"> </span>partition<span class="w"> </span><span class="nv">SEED</span><span class="o">=</span><span class="m">123</span>
 </pre></div>
-</figure><h2>Main targets</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L1-L74">Makefile:1-74</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+</figure><h2>Main targets</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L1-L85">Makefile:1-85</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
 <span class="normal"> 2</span>
 <span class="normal"> 3</span>
 <span class="normal"> 4</span>
@@ -108,10 +108,21 @@ make<span class="w"> </span>partition<span class="w"> </span><span class="nv">SE
 <span class="normal">71</span>
 <span class="normal">72</span>
 <span class="normal">73</span>
-<span class="normal">74</span></pre></div></td><td class="code"><div><pre><span></span><span class="nv">SHELL</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span>/bin/bash
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span></pre></div></td><td class="code"><div><pre><span></span><span class="nv">SHELL</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span>/bin/bash
 <span class="nv">.SHELLFLAGS</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span>-euo<span class="w"> </span>pipefail<span class="w"> </span>-c
 
-<span class="nf">.PHONY</span><span class="o">:</span><span class="w"> </span><span class="n">install</span> <span class="n">data</span> <span class="n">partition</span> <span class="n">compose</span> <span class="n">flower</span>-<span class="n">config</span> <span class="n">up</span> <span class="n">down</span> <span class="n">train</span> <span class="n">eval</span> <span class="n">predict</span> <span class="n">demo</span> <span class="n">render</span>-<span class="n">runtime</span>-<span class="n">notebook</span> <span class="n">pages</span> <span class="n">baselines</span> <span class="n">flat</span> <span class="n">local</span> <span class="n">centralized</span> <span class="n">clean</span>
+<span class="nf">.PHONY</span><span class="o">:</span><span class="w"> </span><span class="n">install</span> <span class="n">data</span> <span class="n">partition</span> <span class="n">compose</span> <span class="n">flower</span>-<span class="n">config</span> <span class="n">up</span> <span class="n">down</span> <span class="n">train</span> <span class="n">eval</span> <span class="n">predict</span> <span class="n">demo</span> <span class="n">demo</span>-<span class="n">docker</span> <span class="n">render</span>-<span class="n">runtime</span>-<span class="n">notebook</span> <span class="n">vignettes</span> <span class="n">pages</span> <span class="n">baselines</span> <span class="n">flat</span> <span class="n">local</span> <span class="n">centralized</span> <span class="n">clean</span>
 
 <span class="nv">SEED</span><span class="w"> </span><span class="o">?=</span><span class="w"> </span><span class="m">123</span>
 <span class="nv">GLOBAL_ROUNDS</span><span class="w"> </span><span class="o">?=</span><span class="w"> </span><span class="m">3</span>
@@ -121,9 +132,11 @@ make<span class="w"> </span>partition<span class="w"> </span><span class="nv">SE
 <span class="nv">DEMO_GLOBAL_ROUNDS</span><span class="w"> </span><span class="o">?=</span><span class="w"> </span><span class="m">1</span>
 <span class="nv">DEMO_REGIONAL_ROUNDS</span><span class="w"> </span><span class="o">?=</span><span class="w"> </span><span class="m">1</span>
 <span class="nv">DEMO_BATCH_SIZE</span><span class="w"> </span><span class="o">?=</span><span class="w"> </span><span class="m">8192</span>
+<span class="nv">COMPOSE_PARALLEL_LIMIT</span><span class="w"> </span><span class="o">?=</span><span class="w"> </span><span class="m">1</span>
+<span class="nv">SUPERLINK_PORTS</span><span class="w"> </span><span class="o">?=</span><span class="w"> </span><span class="m">19093</span>,29093,39093,49093
 
 <span class="nf">install</span><span class="o">:</span>
-<span class="w">	</span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+<span class="w">	</span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[docs]&quot;</span>
 
 <span class="nf">data</span><span class="o">:</span>
 <span class="w">	</span>python<span class="w"> </span>scripts/download_kaggle.py
@@ -139,7 +152,7 @@ make<span class="w"> </span>partition<span class="w"> </span><span class="nv">SE
 <span class="w">	</span>python<span class="w"> </span>scripts/configure_flower_profiles.py
 
 <span class="nf">up</span><span class="o">:</span>
-<span class="w">	</span>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>--build<span class="w"> </span>-d
+<span class="w">	</span><span class="nv">COMPOSE_PARALLEL_LIMIT</span><span class="o">=</span><span class="k">$(</span>COMPOSE_PARALLEL_LIMIT<span class="k">)</span><span class="w"> </span>docker<span class="w"> </span>compose<span class="w"> </span>--ansi<span class="w"> </span>never<span class="w"> </span>--progress<span class="w"> </span>plain<span class="w"> </span>up<span class="w"> </span>--build<span class="w"> </span>-d
 
 <span class="nf">down</span><span class="o">:</span>
 <span class="w">	</span>docker<span class="w"> </span>compose<span class="w"> </span>down<span class="w"> </span>--remove-orphans
@@ -159,33 +172,42 @@ make<span class="w"> </span>partition<span class="w"> </span><span class="nv">SE
 <span class="w">		</span>--hospital-id<span class="w"> </span>hospital_eu_01<span class="w"> </span><span class="se">\</span>
 <span class="w">		</span>--output<span class="w"> </span>reports/predictions_hospital_eu_01.csv
 
-<span class="nf">demo</span><span class="o">:</span><span class="w"> </span><span class="n">compose</span> <span class="n">flower</span>-<span class="n">config</span>
-<span class="w">	</span>docker<span class="w"> </span>compose<span class="w"> </span>down<span class="w"> </span>--remove-orphans
-<span class="w">	</span>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>--build<span class="w"> </span>-d
-<span class="w">	</span>@echo<span class="w"> </span><span class="s2">&quot;Waiting for Flower services to accept CLI submissions...&quot;</span>
-<span class="w">	</span>sleep<span class="w"> </span><span class="m">20</span>
-<span class="w">	</span>@mkdir<span class="w"> </span>-p<span class="w"> </span>reports
-<span class="w">	</span>@:<span class="w"> </span>&gt;<span class="w"> </span>reports/demo_transcript.txt
-<span class="w">	</span>rm<span class="w"> </span>-rf<span class="w"> </span>shared/checkpoints/global<span class="w"> </span>shared/checkpoints/region_eu<span class="w"> </span>shared/checkpoints/region_na
-<span class="w">	</span>python<span class="w"> </span>scripts/run_hierarchical_rounds.py<span class="w"> </span><span class="se">\</span>
+<span class="nf">demo</span><span class="o">:</span><span class="w"> </span><span class="n">flower</span>-<span class="n">config</span>
+<span class="w">	</span>python<span class="w"> </span>scripts/run_demo.py<span class="w"> </span><span class="se">\</span>
 <span class="w">		</span>--global-rounds<span class="w"> </span><span class="k">$(</span>DEMO_GLOBAL_ROUNDS<span class="k">)</span><span class="w"> </span><span class="se">\</span>
 <span class="w">		</span>--regional-rounds<span class="w"> </span><span class="k">$(</span>DEMO_REGIONAL_ROUNDS<span class="k">)</span><span class="w"> </span><span class="se">\</span>
-<span class="w">		</span>--batch-size<span class="w"> </span><span class="k">$(</span>DEMO_BATCH_SIZE<span class="k">)</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
-<span class="w">	</span>python<span class="w"> </span>scripts/evaluate_global_model.py<span class="w"> </span><span class="se">\</span>
-<span class="w">		</span>--checkpoint<span class="w"> </span>shared/checkpoints/global/round_<span class="k">$(</span>DEMO_GLOBAL_ROUNDS<span class="k">)</span>.pt<span class="w"> </span><span class="se">\</span>
-<span class="w">		</span>--batch-size<span class="w"> </span><span class="k">$(</span>DEMO_BATCH_SIZE<span class="k">)</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
-<span class="w">	</span>python<span class="w"> </span>scripts/predict_with_checkpoint.py<span class="w"> </span><span class="se">\</span>
-<span class="w">		</span>--checkpoint<span class="w"> </span>shared/checkpoints/global/round_<span class="k">$(</span>DEMO_GLOBAL_ROUNDS<span class="k">)</span>.pt<span class="w"> </span><span class="se">\</span>
-<span class="w">		</span>--hospital-id<span class="w"> </span>hospital_eu_01<span class="w"> </span><span class="se">\</span>
-<span class="w">		</span>--output<span class="w"> </span>reports/predictions_hospital_eu_01.csv<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
-<span class="w">	</span>python<span class="w"> </span>scripts/render_runtime_notebook.py<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
-<span class="w">	</span>@printf<span class="w"> </span><span class="s1">&#39;\nGlobal metrics summary:\n&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
-<span class="w">	</span>@cat<span class="w"> </span>reports/metrics_summary_global.csv<span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
-<span class="w">	</span>python<span class="w"> </span>scripts/build_pages.py<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>reports/demo_transcript.txt
+<span class="w">		</span>--batch-size<span class="w"> </span><span class="k">$(</span>DEMO_BATCH_SIZE<span class="k">)</span>
+
+<span class="nf">demo-docker</span><span class="o">:</span><span class="w"> </span><span class="n">flower</span>-<span class="n">config</span>
+<span class="w">	</span>python<span class="w"> </span>scripts/generate_compose.py<span class="w"> </span>--output<span class="w"> </span>reports/docker-compose-hierarchical-demo.yml<span class="w"> </span>--hierarchical-only
+<span class="w">	</span>docker<span class="w"> </span>compose<span class="w"> </span>--ansi<span class="w"> </span>never<span class="w"> </span>-f<span class="w"> </span>reports/docker-compose-hierarchical-demo.yml<span class="w"> </span>down<span class="w"> </span>--remove-orphans
+<span class="w">	</span><span class="nv">COMPOSE_PARALLEL_LIMIT</span><span class="o">=</span><span class="k">$(</span>COMPOSE_PARALLEL_LIMIT<span class="k">)</span><span class="w"> </span>docker<span class="w"> </span>compose<span class="w"> </span>--ansi<span class="w"> </span>never<span class="w"> </span>--progress<span class="w"> </span>plain<span class="w"> </span>-f<span class="w"> </span>reports/docker-compose-hierarchical-demo.yml<span class="w"> </span>up<span class="w"> </span>--build<span class="w"> </span>-d
+<span class="w">	</span>python<span class="w"> </span>scripts/wait_for_superlinks.py<span class="w"> </span>--ports<span class="w"> </span><span class="m">19093</span>,29093,39093<span class="w"> </span>--timeout<span class="w"> </span><span class="m">120</span><span class="w"> </span>--settle-seconds<span class="w"> </span><span class="m">20</span>
+<span class="w">	</span>python<span class="w"> </span>scripts/run_demo.py<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--runtime<span class="w"> </span>existing<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--runtime-shared-dir<span class="w"> </span>/shared<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--global-rounds<span class="w"> </span><span class="k">$(</span>DEMO_GLOBAL_ROUNDS<span class="k">)</span><span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--regional-rounds<span class="w"> </span><span class="k">$(</span>DEMO_REGIONAL_ROUNDS<span class="k">)</span><span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--batch-size<span class="w"> </span><span class="k">$(</span>DEMO_BATCH_SIZE<span class="k">)</span>
+
+<span class="nf">render-runtime-notebook</span><span class="o">:</span>
+<span class="w">	</span>python<span class="w"> </span>scripts/render_runtime_notebook.py
+
+<span class="nf">vignettes</span><span class="o">:</span>
+<span class="w">	</span>python<span class="w"> </span>scripts/render_vignettes.py
+<span class="w">	</span>python<span class="w"> </span>scripts/build_pages.py
+
+<span class="nf">pages</span><span class="o">:</span>
+<span class="w">	</span>python<span class="w"> </span>scripts/build_pages.py
+
+<span class="nf">centralized</span><span class="o">:</span>
+<span class="w">	</span>python<span class="w"> </span>scripts/centralized_mlp_baseline.py<span class="w"> </span>--epochs<span class="w"> </span><span class="k">$(</span>EPOCHS<span class="k">)</span><span class="w"> </span>--batch-size<span class="w"> </span><span class="k">$(</span>BATCH_SIZE<span class="k">)</span>
+
+<span class="nf">local</span><span class="o">:</span>
 </pre></div></td></tr></table></div>
-</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L18-L23">Lines 18-23</a> separate download/cleaning from partitioning, so data preparation can be rerun without rebuilding Docker.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L37-L40">Lines 37-40</a> call the hierarchical orchestrator for normal training runs.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L52-L74">Lines 52-74</a> define the compact demo: reset the runtime, train, evaluate, generate predictions, rebuild educational output, then print the CSV summary.</li><li>The demo target assumes the dataset and partitions already exist. This avoids downloading a large dataset every time someone wants to show the algorithm running.</li></ul></div><h2>Direct demo</h2><p>Once data and partitions exist, <code>make demo</code> starts Docker, runs one global round with one regional round, evaluates, and refreshes the renders.</p><figure class="command"><div class="highlight"><pre><span></span>make<span class="w"> </span>demo
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L20-L25">Lines 20-25</a> separate download/cleaning from partitioning, so data preparation can be rerun without rebuilding Docker.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L39-L42">Lines 39-42</a> call the hierarchical orchestrator for normal training runs.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L54-L58">Lines 54-58</a> define the compact local demo and delegate the visible transcript to <code>scripts/run_demo.py</code>.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L60-L70">Lines 60-70</a> keep the Docker route available through <code>make demo-docker</code> without making it the default live demo path.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/Makefile#L75-L77">Lines 75-77</a> execute the educational notebooks and rebuild GitHub Pages without retraining.</li><li>The demo target assumes the dataset and partitions already exist. This avoids downloading a large dataset every time someone wants to show the algorithm running.</li></ul></div><h2>Direct demo</h2><p>Once data and partitions exist, <code>make demo</code> starts a local Flower Deployment Runtime with real SuperLinks, SuperNodes, and SuperExec processes. It runs one global round with one regional round, evaluates, predicts, executes the notebook vignettes, and refreshes the renders.</p><figure class="command"><div class="highlight"><pre><span></span>make<span class="w"> </span>demo
 </pre></div>
-</figure><h2>Package dependencies</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L15-L28">pyproject.toml:15-28</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">15</span>
+</figure><h2>Package dependencies</h2><figure><figcaption><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L15-L35">pyproject.toml:15-35</a></figcaption><div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">15</span>
 <span class="normal">16</span>
 <span class="normal">17</span>
 <span class="normal">18</span>
@@ -198,7 +220,14 @@ make<span class="w"> </span>partition<span class="w"> </span><span class="nv">SE
 <span class="normal">25</span>
 <span class="normal">26</span>
 <span class="normal">27</span>
-<span class="normal">28</span></pre></div></td><td class="code"><div><pre><span></span><span class="n">dependencies</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span></pre></div></td><td class="code"><div><pre><span></span><span class="n">dependencies</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
 <span class="w">  </span><span class="s2">&quot;flwr[simulation]==1.29.0&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="s2">&quot;torch&gt;=2.3,&lt;3.0&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="s2">&quot;pandas&gt;=2.2&quot;</span><span class="p">,</span>
@@ -208,12 +237,19 @@ make<span class="w"> </span>partition<span class="w"> </span><span class="nv">SE
 <span class="w">  </span><span class="s2">&quot;kaggle&gt;=1.6&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="s2">&quot;typer&gt;=0.12&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="s2">&quot;rich&gt;=13.0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="s2">&quot;pydantic&gt;=2.0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="s2">&quot;matplotlib&gt;=3.8&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="s2">&quot;jupyter&gt;=1.0&quot;</span>
+<span class="w">  </span><span class="s2">&quot;pydantic&gt;=2.0&quot;</span>
 <span class="p">]</span>
+
+<span class="k">[project.optional-dependencies]</span>
+<span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="s2">&quot;jupyter&gt;=1.0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="s2">&quot;matplotlib&gt;=3.8&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="s2">&quot;nbclient&gt;=0.10&quot;</span>
+<span class="p">]</span>
+
+<span class="k">[project.scripts]</span>
 </pre></div></td></tr></table></div>
-</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L16">Line 16</a> pins Flower to the version used for the deployment runtime demo.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L17">Line 17</a> keeps the model in PyTorch so FedAvg can average tensors directly.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L20-L21">Lines 20-21</a> provide preprocessing and parquet IO.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L22">Line 22</a> keeps the dataset download reproducible through Kaggle.</li></ul></div><div class="pager"><a href="00-roadmap.html">Previous: 00 - Mental model and topology</a><span></span><a href="02-data-pipeline.html">Next: 02 - Reproducible data pipeline</a></div>
+</figure><div class="notes"><strong>What to notice</strong><ul><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L16">Line 16</a> pins Flower to the version used for the deployment runtime demo.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L17">Line 17</a> keeps the model in PyTorch so FedAvg can average tensors directly.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L20-L21">Lines 20-21</a> provide preprocessing and parquet IO.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L22">Line 22</a> keeps the dataset download reproducible through Kaggle.</li><li><a href="https://github.com/davidsarrat/hospital-ids-hfl/blob/main/pyproject.toml#L28-L33">Lines 28-33</a> keep notebook rendering dependencies in the <code>docs</code> extra instead of the Flower runtime images.</li></ul></div><div class="pager"><a href="00-roadmap.html">Previous: 00 - Mental model and topology</a><span></span><a href="02-data-pipeline.html">Next: 02 - Reproducible data pipeline</a></div>
     </main>
   </div>
 </body>

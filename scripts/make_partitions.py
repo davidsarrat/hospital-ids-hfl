@@ -78,7 +78,7 @@ def _repair_min_group_rows(
     min_rows: int,
     rng: np.random.Generator,
 ) -> None:
-    """Move already assigned rows so each hospital has a minimum group count."""
+    """Move already assigned rows so each site has a minimum group count."""
 
     if min_rows <= 0:
         return
@@ -143,7 +143,7 @@ def split_hospital(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if len(df) < 3:
         raise ValueError(
-            "A hospital partition has fewer than three rows. Use a larger sample or the full dataset."
+            "A site partition has fewer than three rows. Use a larger sample or the full dataset."
         )
 
     temp_size = val_size + test_size
@@ -176,7 +176,7 @@ def _fit_scaler(train_frames: list[pd.DataFrame], feature_cols: list[str]) -> di
         "impute_values": {col: float(impute_values[col]) for col in feature_cols},
         "mean": {col: float(means[col]) for col in feature_cols},
         "std": {col: float(stds[col]) for col in feature_cols},
-        "fitted_on": "concatenated hospital train splits",
+        "fitted_on": "concatenated simulated healthcare-site train splits",
     }
 
 
@@ -233,7 +233,7 @@ def main(
         DEFAULT_PARTITIONS_DIR,
         "--output-dir",
         "-o",
-        help="Hospital partition output directory.",
+        help="Healthcare-site partition output directory.",
     ),
     scaler_path: Path = typer.Option(
         DEFAULT_SCALER_PATH,
@@ -245,7 +245,7 @@ def main(
     test_size: float = typer.Option(0.15, "--test-size", help="Test fraction."),
     seed: int = typer.Option(123, "--seed", help="Random seed."),
 ) -> None:
-    """Create six non-IID hospital partitions and train-only scaler metadata."""
+    """Create six non-IID healthcare-site partitions and train-only scaler metadata."""
 
     df = pd.read_parquet(input_path)
     if "label" not in df.columns:

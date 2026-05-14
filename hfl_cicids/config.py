@@ -14,6 +14,8 @@ DEFAULT_SCALER_PATH = DEFAULT_SHARED_DIR / "preprocessing" / "scaler.json"
 
 @dataclass(frozen=True)
 class Hospital:
+    """Simulated healthcare-network site using a stable `hospital_*` identifier."""
+
     hospital_id: str
     region: str
     preferred_attack_groups: tuple[str, ...]
